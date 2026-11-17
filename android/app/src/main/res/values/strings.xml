@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PocketInput</string>
+    <string name="notif_title">PocketInput</string>
+    <string name="notif_connected">подключено</string>
+    <string name="notif_disconnected">нет подключения</string>
+    <string name="connect_button">Подключить</string>
+    <string name="error_no_hid">Телефон не поддерживает HID; нужен агент</string>
+    <string name="trackpad_title">Трекпад</string>
+</resources>
