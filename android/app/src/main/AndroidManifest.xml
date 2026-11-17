@@ -12,6 +12,10 @@
     <!-- Runtime Bluetooth permissions (API 31+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- Foreground service: без FOREGROUND_SERVICE startForeground падает SecurityException
+         (находка эмулятора, фаза 0). Для type=connectedDevice на API 34 нужен и второй. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <!-- Notification permission (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

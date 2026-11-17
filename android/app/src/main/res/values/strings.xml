@@ -1,10 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PocketInput</string>
     <string name="notif_title">PocketInput</string>
-    <string name="notif_connected">подключено</string>
-    <string name="notif_disconnected">нет подключения</string>
-    <string name="connect_button">Подключить</string>
-    <string name="error_no_hid">Телефон не поддерживает HID; нужен агент</string>
-    <string name="trackpad_title">Трекпад</string>
+    <string name="notif_connected">connected</string>
+    <string name="notif_disconnected">not connected</string>
+    <string name="connect_button">Connect</string>
+    <string name="error_no_hid">This phone does not support HID; an agent is required</string>
+    <string name="trackpad_title">Trackpad</string>
+    <string name="connect_title">Connection</string>
+    <string name="status_hid_ok">HID profile: available</string>
+    <string name="status_hid_none">HID profile: unavailable</string>
+    <string name="status_bt_on">Bluetooth: on</string>
+    <string name="status_bt_off">Bluetooth: off</string>
+    <string name="empty_devices_bt_off">Bluetooth is off. Turn it on to see paired devices.</string>
+    <string name="empty_devices">No paired devices. Pair the PC in Bluetooth settings.</string>
+    <string name="trackpad_hint">Drag to move the cursor, tap to click.</string>
 </resources>

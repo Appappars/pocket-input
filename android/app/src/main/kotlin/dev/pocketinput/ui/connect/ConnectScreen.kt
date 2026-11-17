@@ -6,15 +6,20 @@ import android.bluetooth.BluetoothDevice
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.pocketinput.R
 import dev.pocketinput.hid.HidTransport
+import kotlinx.coroutines.delay
 
 /**
  * Фаза 0, spec/05-roadmap-qa.md 5.3 п.5: список спаренных устройств,
@@ -41,8 +47,12 @@ fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
 
     var devices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
     var selected by remember { mutableStateOf<BluetoothDevice?>(null) }
+    // Профиль HID выдаётся асинхронно (getProfileProxy), поэтому статус перечитываем.
+    var hidAvailable by remember { mutableStateOf(transport.isHidSupported()) }
+    var btEnabled by remember {
+        mutableStateOf(BluetoothAdapter.getDefaultAdapter()?.isEnabled == true)
+    }
 
-    // Android 12+ (S): BLUETOOTH_CONNECT нужен ДО чтения bondedDevices и device.name
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -57,24 +67,80 @@ fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
         } else {
             devices = readBondedDevices()
         }
+        // ждём колбэк профиля: на части прошивок он приходит через 200-800 мс
+        repeat(6) {
+            delay(300)
+            hidAvailable = transport.isHidSupported()
+            btEnabled = BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+            if (devices.isEmpty()) devices = readBondedDevices()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        if (!transport.isHidSupported()) {
+        Text(
+            text = stringResource(R.string.connect_title),
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        Surface(
+            tonalElevation = 2.dp,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = stringResource(
+                        if (hidAvailable) R.string.status_hid_ok else R.string.status_hid_none
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (hidAvailable) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                Text(
+                    text = stringResource(
+                        if (btEnabled) R.string.status_bt_on else R.string.status_bt_off
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+
+        if (!hidAvailable) {
+            Spacer(Modifier.height(8.dp))
             // Дословная строка из @string/error_no_hid: «Телефон не поддерживает HID; нужен агент».
-            // Приложение не падает: только показываем текст.
             Text(
                 text = errorNoHid,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(bottom = 8.dp)
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
+
+        Spacer(Modifier.height(12.dp))
+
         LazyColumn(modifier = Modifier.weight(1f)) {
+            if (devices.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(
+                            if (btEnabled) R.string.empty_devices else R.string.empty_devices_bt_off
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             items(devices) { device ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start,
+                ) {
                     RadioButton(
                         selected = selected == device,
-                        onClick = { selected = device }
+                        onClick = { selected = device },
                     )
                     Column(modifier = Modifier.padding(start = 8.dp)) {
                         Text(device.name ?: device.address)
@@ -83,17 +149,20 @@ fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
                 }
             }
         }
-        Button(onClick = {
-            val device = selected
-            // transport.connectTo(device) — если такой метод есть; иначе просто onConnected().
-            val connectTo = transport.javaClass.methods.firstOrNull {
-                it.name == "connectTo" && it.parameterTypes.size == 1
-            }
-            if (connectTo != null && device != null) {
-                runCatching { connectTo.invoke(transport, device) }
-            }
-            onConnected()
-        }) {
+
+        Button(
+            onClick = {
+                val device = selected
+                val connectTo = transport.javaClass.methods.firstOrNull {
+                    it.name == "connectTo" && it.parameterTypes.size == 1
+                }
+                if (connectTo != null && device != null) {
+                    runCatching { connectTo.invoke(transport, device) }
+                }
+                onConnected()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Text(connectLabel)
         }
     }

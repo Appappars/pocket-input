@@ -18,10 +18,7 @@ import dev.pocketinput.R
 import dev.pocketinput.hid.HidTransport
 import kotlin.math.sqrt
 
-// Пороги из spec/05-roadmap-qa.md 5.3 п.6 — не менять (zero-decision rule).
-private const val TAP_THRESHOLD_DP = 8f          // сдвиг < 8 dp = тап, >= 8 dp = drag
-private const val MIN_REPORT_INTERVAL_NS = 8_333_333L // не чаще 120 Гц
-private const val MAX_DELTA_PX = 127             // int8-ось: дельта режется до 127
+// Пороги из spec/05-roadmap-qa.md 5.3 п.6 — живут в TrackpadMath (zero-decision rule).
 private const val BUTTON_LEFT = 1                // левая кнопка мыши = 1
 
 /**
@@ -34,9 +31,15 @@ fun TrackpadScreen(transport: HidTransport, sensitivity: Float = 1.0f) {
         Text(
             text = stringResource(R.string.trackpad_title),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 4.dp)
         )
-        val pxPerDp = LocalConfiguration.current.densityDpi / 160f
+        Text(
+            text = stringResource(R.string.trackpad_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        val pxPerDp = TrackpadMath.pxPerDp(LocalConfiguration.current.densityDpi, sensitivity)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -53,22 +56,22 @@ fun TrackpadScreen(transport: HidTransport, sensitivity: Float = 1.0f) {
                             val dyDp = dragAmount.y / pxPerDp
                             totalShiftDp += sqrt(dxDp * dxDp + dyDp * dyDp).toFloat()
                             // порог drag: >= 8 dp
-                            if (totalShiftDp >= TAP_THRESHOLD_DP) {
+                            if (!TrackpadMath.isTap(totalShiftDp)) {
                                 // троттлинг: не чаще 120 Гц
                                 val now = System.nanoTime()
-                                if (now - lastReportNs >= MIN_REPORT_INTERVAL_NS) {
+                                if (TrackpadMath.shouldSend(now, lastReportNs)) {
                                     lastReportNs = now
                                     sendClamped(
                                         transport,
-                                        dxPx = dxDp * pxPerDp * sensitivity,
-                                        dyPx = dyDp * pxPerDp * sensitivity
+                                        dxPx = dxDp * pxPerDp,
+                                        dyPx = dyDp * pxPerDp
                                     )
                                 }
                             }
                         },
                         onDragEnd = {
                             // порог тапа: суммарный сдвиг < 8 dp
-                            if (totalShiftDp < TAP_THRESHOLD_DP) {
+                            if (TrackpadMath.isTap(totalShiftDp)) {
                                 transport.sendMouse(BUTTON_LEFT, 0, 0, 0)
                                 transport.sendMouse(0, 0, 0, 0)
                             }
@@ -83,16 +86,11 @@ fun TrackpadScreen(transport: HidTransport, sensitivity: Float = 1.0f) {
 }
 
 /**
- * Дельта больше 127 px режется до 127, остаток досылается следующим пакетом (цикл while).
+ * Дельта больше 127 px режется до 127, остаток досылается следующим пакетом.
+ * Сама нарезка — в TrackpadMath.splitDeltas (покрыта JVM-тестом).
  */
 private fun sendClamped(transport: HidTransport, dxPx: Float, dyPx: Float) {
-    var remX = dxPx.toInt()
-    var remY = dyPx.toInt()
-    while (remX != 0 || remY != 0) {
-        val stepX = remX.coerceIn(-MAX_DELTA_PX, MAX_DELTA_PX)
-        val stepY = remY.coerceIn(-MAX_DELTA_PX, MAX_DELTA_PX)
-        transport.sendMouse(0, stepX, stepY, 0)
-        remX -= stepX
-        remY -= stepY
+    for ((dx, dy) in TrackpadMath.splitDeltas(dxPx, dyPx)) {
+        transport.sendMouse(0, dx, dy, 0)
     }
 }

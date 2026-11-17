@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PocketInput</string>
     <string name="notif_title">PocketInput</string>
@@ -7,4 +6,12 @@
     <string name="connect_button">Подключить</string>
     <string name="error_no_hid">Телефон не поддерживает HID; нужен агент</string>
     <string name="trackpad_title">Трекпад</string>
+    <string name="connect_title">Подключение</string>
+    <string name="status_hid_ok">HID-профиль: доступен</string>
+    <string name="status_hid_none">HID-профиль: недоступен</string>
+    <string name="status_bt_on">Bluetooth: включён</string>
+    <string name="status_bt_off">Bluetooth: выключен</string>
+    <string name="empty_devices_bt_off">Bluetooth выключен. Включите его, чтобы увидеть спаренные устройства.</string>
+    <string name="empty_devices">Нет спаренных устройств. Спарьте ПК в настройках Bluetooth.</string>
+    <string name="trackpad_hint">Ведите пальцем — курсор, тап — клик.</string>
 </resources>

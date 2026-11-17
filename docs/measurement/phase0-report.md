@@ -44,3 +44,31 @@ boot-протоколом (usage_page 0x01 + Report ID). Полный артеф
 4. Приложить скриншот диспетчера устройств с парой «телефон как HID-композит».
 5. Прогнать `hid_probe.py` на втором ПК матрицы (Win11, Intel BT 5.2) и сохранить
    `docs/measurement/hid-probe-<дата>.md`.
+
+## Прогон на эмуляторе (Android 14, Pixel 6, x86_64) — 2026-11-17
+
+Проверка «по коду» без физических устройств: сборка, JVM-тесты и запуск на эмуляторе.
+
+| Проверка | Команда | Результат |
+|---|---|---|
+| Сборка | `gradle :app:assembleDebug` | BUILD SUCCESSFUL, `app-debug.apk` 24,2 МБ |
+| Юнит-тесты | `gradle :app:testDebugUnitTest` | 11 тестов, 0 провалов (DescriptorsTest 5, TrackpadMathTest 6) |
+| Запуск | `adb install` + `am start` | приложение стартует, 0 FATAL в logcat |
+| Foreground service | `dumpsys activity services` | `isForeground=true`, `types=00000010` (connectedDevice) |
+| Экран подключения | uiautomator dump | «Подключение», «HID-профиль: доступен», «Bluetooth: включён», пустое состояние, кнопка «Подключить» |
+| Экран трекпада | tap + screenshot | «Трекпад», подсказка, область трекпада на весь экран |
+
+### Дефекты, найденные прогоном (компилятор их не видел)
+
+1. **`SecurityException: requires android.permission.FOREGROUND_SERVICE`** — сервис падал при старте:
+   в манифесте не было `FOREGROUND_SERVICE` и `FOREGROUND_SERVICE_CONNECTED_DEVICE`. Исправлено.
+2. **`Starting FGS with type connectedDevice ... requires permissions`** — при targetSdk 34 одного
+   `<uses-permission>` мало: нужно ВЫДАННОЕ runtime-разрешение `BLUETOOTH_CONNECT`. Исправлено:
+   `startForeground` обёрнут в try/catch, при отказе сервис живёт без foreground и не роняет приложение.
+3. **Пустой экран подключения** — ни статуса, ни пустого состояния, кнопка без контекста. Добавлены
+   заголовок, карточка статуса (HID-профиль / Bluetooth), пустое состояние и полноширинная кнопка.
+
+### Что осталось непроверенным
+
+Профиль `HID_DEVICE` на реальных прошивках, задержка первого клика после 60 с простоя,
+видимость устройства в диспетчере Windows — эмулятор этого не заменяет.
