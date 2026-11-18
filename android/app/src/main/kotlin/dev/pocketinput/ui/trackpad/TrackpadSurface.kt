@@ -16,9 +16,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -56,6 +58,7 @@ fun TrackpadSurface(
     val onHold by rememberUpdatedState(onLeftHold)
     val onHoldCancelled by rememberUpdatedState(onLeftHoldCancelled)
     val onFocusChange by rememberUpdatedState(onFocusChangingInput)
+    var padSize by remember { mutableStateOf(IntSize.Zero) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, _ ->
@@ -72,6 +75,7 @@ fun TrackpadSurface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(12.dp),
             )
+            .onSizeChanged { padSize = it }
             .pointerInput(transport, sessionId, density, settings) {
                 if (sessionId == 0L) return@pointerInput
 
@@ -90,12 +94,20 @@ fun TrackpadSurface(
                     }
                 }
 
-                val recognizer = TrackpadGestures(settings, density, isLeftLatched = { isLatched }) { action ->
+                val recognizer = TrackpadGestures(
+                    settings,
+                    density,
+                    padSize = {
+                        val measured = padSize
+                        TrackpadSize(measured.width / density, measured.height / density)
+                    },
+                    isLeftLatched = { isLatched },
+                ) { action ->
                     val current = transport.link
                     val sameSession = current.sessionId == sessionId && current.state == LinkState.CONNECTED
-                    val endingDrag = action == TrackpadAction.Button.RELEASE_LEFT ||
-                        action == TrackpadAction.Button.CANCEL_DRAG
-                    if (sameSession && (resumed || endingDrag)) {
+                    val finishingGesture = action == TrackpadAction.Button.RELEASE_LEFT ||
+                        action == TrackpadAction.Button.CANCEL_DRAG || action == TrackpadAction.CancelScroll
+                    if (sameSession && (resumed || finishingGesture)) {
                         when (action) {
                             TrackpadAction.Button.LEFT_CLICK -> if (!isLatched) {
                                 onFocusChange()
@@ -118,7 +130,9 @@ fun TrackpadSurface(
                                 transport.cancelPointerHold(keepLeft)
                             }
                             is TrackpadAction.Motion -> transport.sendMotion(action.dx, action.dy)
-                            is TrackpadAction.Wheel -> transport.wheel(action.detents)
+                            is TrackpadAction.Wheel -> transport.scroll(action.horizontal, action.detents)
+                            is TrackpadAction.Zoom -> transport.zoom(action.detents)
+                            TrackpadAction.CancelScroll -> transport.cancelScroll()
                             is TrackpadAction.Swipe -> {
                                 onFocusChange()
                                 when (action.direction) {

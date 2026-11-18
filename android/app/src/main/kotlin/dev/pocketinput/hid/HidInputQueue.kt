@@ -1,37 +1,8 @@
 package dev.pocketinput.hid
 
-import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 internal const val KEYBOARD_QUEUE_CAPACITY = 128
-
-internal fun interface ScheduledHidTask {
-    fun cancel()
-}
-
-internal interface HidQueueScheduler : AutoCloseable {
-    fun nowNanos(): Long
-
-    // Runs actions asynchronously and serially, in scheduling order for equal deadlines.
-    fun schedule(delayNanos: Long, action: () -> Unit): ScheduledHidTask
-}
-
-private class HidWorker : HidQueueScheduler {
-    private val executor = ScheduledThreadPoolExecutor(1).apply {
-        removeOnCancelPolicy = true
-    }
-
-    override fun nowNanos(): Long = System.nanoTime()
-
-    override fun schedule(delayNanos: Long, action: () -> Unit): ScheduledHidTask {
-        val future = executor.schedule(action, delayNanos, TimeUnit.NANOSECONDS)
-        return ScheduledHidTask { future.cancel(false) }
-    }
-
-    override fun close() {
-        executor.shutdown()
-    }
-}
 
 internal class HidInputQueue(
     private val onSendResult: (sessionId: Long, waitedMs: Float, ok: Boolean) -> Unit,
@@ -50,8 +21,9 @@ internal class HidInputQueue(
 
     fun currentReport(id: Int): ByteArray? = synchronized(lock) {
         when (id) {
-            MOUSE -> mouse(session?.mouse?.accepted?.get(0)?.toInt() ?: 0)
+            MOUSE -> mouseReport(session?.mouse?.accepted?.get(0)?.toInt() ?: 0)
             KEYBOARD -> session?.keyboard?.accepted?.copyOf() ?: Descriptors.keyboardReport(0)
+            HORIZONTAL_SCROLL -> Descriptors.horizontalScrollReport(0)
             else -> null
         }
     }
@@ -73,7 +45,12 @@ internal class HidInputQueue(
         val cancelled = synchronized(lock) {
             keyboardVersion++
             val current = session ?: return
-            replaceSessionLocked(Session(current.id, current.send))
+            val next = Session(current.id, current.send)
+            if (current.inputPaused) {
+                next.inputPaused = true
+                next.keyboard.delayed = keyboardNeutralRecovery()
+            }
+            replaceSessionLocked(next)
         }
         rejectProbes(cancelled)
     }
@@ -92,8 +69,8 @@ internal class HidInputQueue(
         synchronized(lock) {
             val current = session ?: return
             val mask = button and BUTTON_MASK
-            if (mask == 0 || current.mouse.pending.size >= MOUSE_LIMIT) return
-            current.mouse.pending.addLast(Tap(mask, 0, holdMs, scheduler.nowNanos(), current.nextOrder++))
+            if (current.inputPaused || mask == 0 || current.mouse.pending.size >= MOUSE_LIMIT) return
+            current.mouse.pending.addLast(HidTap(mask, 0, holdMs, scheduler.nowNanos(), current.nextOrder++))
             scheduleReadyLocked(current)
         }
     }
@@ -113,18 +90,27 @@ internal class HidInputQueue(
     fun cancelMouseInput(keepMask: Int) {
         val cancelled = synchronized(lock) {
             val current = session ?: return
-            val mask = keepMask and BUTTON_MASK
-            current.desiredButtons = mask
-            val pendingProbes = clearLaneLocked(current.mouse)
-            appendStateLocked(current, current.mouse, mouse(mask), retry = true, ordered = false)
-            pendingProbes
+            cancelMouseLocked(current, keepMask and BUTTON_MASK)
         }
         rejectProbes(cancelled)
     }
 
-    fun sendMotion(dx: Int, dy: Int) = enqueueDelta(dx, dy, wheel = 0, scroll = false)
+    fun sendMotion(dx: Int, dy: Int) = enqueueDelta(dx, dy, HidDeltaKind.POINTER)
 
-    fun wheel(units: Int) = enqueueDelta(0, 0, wheel = units, scroll = true)
+    fun wheel(units: Int) = scroll(0, units)
+
+    fun scroll(horizontal: Int, vertical: Int) = enqueueDelta(horizontal, vertical, HidDeltaKind.SCROLL)
+
+    fun zoom(units: Int) = enqueueDelta(0, units, HidDeltaKind.ZOOM)
+
+    fun cancelScroll() {
+        synchronized(lock) {
+            val current = session ?: return
+            current.scrollVersion++
+            current.mouse.pending.removeAll { it is HidDelta && it.kind != HidDeltaKind.POINTER }
+            scheduleReadyLocked(current)
+        }
+    }
 
     fun keyTap(usage: Int, mods: Int = 0, holdMs: Long = 20, expectedSessionId: Long? = null): Boolean =
         enqueueKeyTaps(listOf(usage to mods), holdMs, expectedSessionId, expectedKeyboardRevision = null)
@@ -154,10 +140,10 @@ internal class HidInputQueue(
     fun probe(callback: (Boolean) -> Unit) {
         val queued = synchronized(lock) {
             val current = session
-            if (current == null || current.mouse.pending.size >= MOUSE_LIMIT) {
+            if (current == null || current.inputPaused || current.mouse.pending.size >= MOUSE_LIMIT) {
                 false
             } else {
-                current.mouse.pending.addLast(Probe(callback, scheduler.nowNanos()))
+                current.mouse.pending.addLast(HidProbe(callback, scheduler.nowNanos()))
                 scheduleReadyLocked(current)
                 true
             }
@@ -171,19 +157,32 @@ internal class HidInputQueue(
             val before = current.desiredButtons
             val after = transform(before)
             if (before == after) return
+            if (current.inputPaused) {
+                if (after and before != after) return
+                return@synchronized cancelMouseLocked(current, after)
+            }
             val lane = current.mouse
             val releasesButton = (before and after) != before || lane.pending.size >= MOUSE_LIMIT
             val pendingProbes = makeRoomForButtonsLocked(lane)
             current.desiredButtons = after
-            appendStateLocked(current, lane, mouse(after), retry = releasesButton)
+            appendStateLocked(current, lane, mouseReport(after), retry = releasesButton)
             pendingProbes
         }
         rejectProbes(cancelled)
     }
 
-    private fun makeRoomForButtonsLocked(lane: Lane): List<(Boolean) -> Unit> {
+    private fun cancelMouseLocked(state: Session, keepMask: Int): List<(Boolean) -> Unit> {
+        val lane = state.mouse
+        val mask = if (state.inputPaused) keepMask and lane.accepted[0].toInt() else keepMask
+        state.desiredButtons = mask
+        val cancelled = clearLaneLocked(lane)
+        appendStateLocked(state, lane, mouseReport(mask), retry = true, ordered = false)
+        return cancelled
+    }
+
+    private fun makeRoomForButtonsLocked(lane: HidLane): List<(Boolean) -> Unit> {
         if (lane.pending.size < MOUSE_LIMIT) return emptyList()
-        val firstDelta = lane.pending.indexOfFirst { it is Delta }
+        val firstDelta = lane.pending.indexOfFirst { it is HidDelta }
         if (firstDelta < 0) return clearLaneLocked(lane)
         lane.pending.removeAt(firstDelta)
         return emptyList()
@@ -203,34 +202,36 @@ internal class HidInputQueue(
             if (keys.size > KEYBOARD_QUEUE_CAPACITY - lane.pending.size) return false
             val now = scheduler.nowNanos()
             for ((usage, modifiers) in keys) {
-                lane.pending.addLast(Tap(usage, modifiers, holdMs, now, current.nextOrder++))
+                lane.pending.addLast(HidTap(usage, modifiers, holdMs, now, current.nextOrder++))
             }
             scheduleReadyLocked(current)
             true
         }
 
     private fun matchingSessionLocked(expected: Long?): Session? =
-        session?.takeIf { expected == null || it.id == expected }
+        session?.takeIf { !it.inputPaused && (expected == null || it.id == expected) }
 
-    private fun enqueueDelta(dx: Int, dy: Int, wheel: Int, scroll: Boolean) {
-        if (dx == 0 && dy == 0 && wheel == 0) return
+    private fun enqueueDelta(dx: Int, dy: Int, kind: HidDeltaKind) {
+        if (dx == 0 && dy == 0) return
         synchronized(lock) {
             val current = session ?: return
+            if (current.inputPaused) return
             val lane = current.mouse
-            val previous = lane.pending.lastOrNull() as? Delta
-            if (previous != null && previous.scroll == scroll) {
+            val previous = lane.pending.lastOrNull() as? HidDelta
+            val adjacent = previous?.kind == kind &&
+                (kind != HidDeltaKind.ZOOM || previous.order == current.nextOrder - 1)
+            if (previous != null && adjacent) {
                 previous.x = boundedDelta(previous.x, dx)
                 previous.y = boundedDelta(previous.y, dy)
-                previous.wheel = boundedDelta(previous.wheel, wheel)
                 if (previous.isEmpty()) lane.pending.removeLast()
             } else if (lane.pending.size < MOUSE_LIMIT) {
                 lane.pending.addLast(
-                    Delta(
+                    HidDelta(
                         x = boundedDelta(0, dx),
                         y = boundedDelta(0, dy),
-                        wheel = boundedDelta(0, wheel),
-                        scroll = scroll,
+                        kind = kind,
                         enqueuedAt = scheduler.nowNanos(),
+                        order = if (kind == HidDeltaKind.ZOOM) current.nextOrder++ else null,
                     ),
                 )
             }
@@ -243,34 +244,32 @@ internal class HidInputQueue(
         session = next
         if (next != null) {
             appendStateLocked(next, next.mouse, next.mouse.base, retry = true, ordered = false)
-            appendStateLocked(next, next.keyboard, next.keyboard.base, retry = true, ordered = false)
+            if (!next.inputPaused) appendStateLocked(next, next.keyboard, next.keyboard.base, retry = true, ordered = false)
         }
         return cancelled
     }
 
-    private fun clearLaneLocked(lane: Lane): List<(Boolean) -> Unit> {
-        val probes = lane.pending.filterIsInstance<Probe>().map { it.complete } + listOfNotNull(lane.inFlightProbe)
+    private fun clearLaneLocked(lane: HidLane): List<(Boolean) -> Unit> {
+        val probes = lane.pending.filterIsInstance<HidProbe>().map { it.complete } + listOfNotNull(lane.inFlightProbe)
         lane.generation++
         lane.timer?.cancel()
         lane.timer = null
-        lane.sending = false
-        lane.inFlightOrder = null
+        lane.finish()
         lane.pending.clear()
         lane.delayed = null
         lane.nextDeltaAt = null
-        lane.inFlightProbe = null
         return probes
     }
 
     private fun appendStateLocked(
         state: Session,
-        lane: Lane,
+        lane: HidLane,
         report: ByteArray,
         retry: Boolean,
         ordered: Boolean = true,
     ) {
         val order = if (ordered) state.nextOrder++ else null
-        lane.pending.addLast(SetState(report, retry, scheduler.nowNanos(), order))
+        lane.pending.addLast(HidSetState(report, retry, scheduler.nowNanos(), order))
         scheduleReadyLocked(state)
     }
 
@@ -279,110 +278,176 @@ internal class HidInputQueue(
         scheduleLocked(state, state.keyboard, state.mouse)
     }
 
-    private fun scheduleLocked(state: Session, lane: Lane, other: Lane) {
+    private fun scheduleLocked(state: Session, lane: HidLane, other: HidLane) {
         if (lane.timer != null || lane.sending) return
-        val delayed = lane.delayed
+        if (!canDispatch(state, lane, other)) return
         val command = lane.pending.firstOrNull()
-        val order = if (delayed != null) delayed.order else command?.order
-        // A click must wait for earlier text, and later text must wait for the click to finish.
-        if (order != null && other.firstOrdered()?.let { it < order } == true) return
         val now = scheduler.nowNanos()
-        val due = delayed?.readySince ?: when (command) {
+        val due = lane.delayed?.readySince ?: when (command) {
             null -> return
-            is Delta -> lane.nextDeltaAt ?: now
+            is HidDelta -> lane.nextDeltaAt ?: now
             else -> now
         }
         val generation = lane.generation
         lane.timer = scheduler.schedule((due - now).coerceAtLeast(0)) { drain(state, lane, generation) }
     }
 
-    private fun drain(state: Session, lane: Lane, generation: Long) {
+    private fun canDispatch(state: Session, lane: HidLane, other: HidLane): Boolean {
+        if (state.inputPaused) return lane.hasSafeRelease()
+        val delayed = lane.delayed
+        val order = if (delayed != null) delayed.order else lane.pending.firstOrNull()?.order
+        return order == null || other.firstOrdered()?.let { it < order } != true
+    }
+
+    private fun drain(state: Session, lane: HidLane, generation: Long) {
+        val scrollVersion: Long
         val plan = synchronized(lock) {
             if (session !== state || lane.generation != generation) return
             lane.timer = null
-            val next = takeReportLocked(lane) ?: return
+            val other = if (lane === state.mouse) state.keyboard else state.mouse
+            if (!canDispatch(state, lane, other)) return
+            val next = lane.takeReport(scheduler.nowNanos()) ?: return
+            scrollVersion = state.scrollVersion
             lane.sending = true
             lane.inFlightOrder = next.order
             lane.inFlightProbe = next.probe
             next
         }
         val waitedMs = (scheduler.nowNanos() - plan.readySince).coerceAtLeast(0L) / 1_000_000f
-        val ok = runCatching { state.send(lane.id, plan.report) }.getOrDefault(false)
-        synchronized(lock) {
-            if (session !== state || lane.generation != generation) return
-            if (ok) lane.accepted = plan.report
-            lane.inFlightProbe = null
-            lane.inFlightOrder = null
-            lane.sending = false
-            val release = plan.releaseTo
-            when {
-                !ok && plan.keyboardInput -> recoverKeyboardLocked(lane, plan.order)
-                release != null -> {
-                    val due = scheduler.nowNanos() + TimeUnit.MILLISECONDS.toNanos(plan.holdMs.coerceAtLeast(0L))
-                    lane.delayed = Report(release, due, retry = true, order = plan.order, keyboardInput = plan.keyboardInput)
-                }
-                !ok && plan.retry -> {
-                    lane.delayed = Report(plan.report, scheduler.nowNanos() + RETRY_DELAY_NS, order = plan.order)
+        val expectedScrollVersion = when (plan.deltaKind) {
+            HidDeltaKind.SCROLL, HidDeltaKind.ZOOM -> scrollVersion
+            else -> null
+        }
+        if (!isCurrent(state, lane, generation, expectedScrollVersion)) {
+            synchronized(lock) {
+                if (session === state && lane.generation == generation) {
+                    lane.finish()
+                    scheduleReadyLocked(state)
                 }
             }
-            scheduleReadyLocked(state)
+            return
         }
-        runCatching { onSendResult(state.id, waitedMs, ok) }
+        if (plan.deltaKind == HidDeltaKind.ZOOM) {
+            drainZoom(state, lane, generation, plan, waitedMs, scrollVersion)
+            return
+        }
+        val reportId = plan.reportId ?: lane.id
+        val ok = transmit(state, reportId, plan.report)
+        val horizontalOk = if (plan.horizontal != 0 && isCurrent(state, lane, generation, scrollVersion)) {
+            transmit(state, HORIZONTAL_SCROLL, Descriptors.horizontalScrollReport(plan.horizontal))
+        } else {
+            null
+        }
+        val cancelled = synchronized(lock) {
+            if (session !== state || lane.generation != generation) return
+            if (ok && reportId == lane.id) lane.accepted = plan.report
+            lane.finish()
+            val release = plan.releaseTo
+            var probes = emptyList<(Boolean) -> Unit>()
+            when {
+                ok && plan.role == HidReportRole.KEYBOARD_RECOVERY -> state.inputPaused = false
+                !ok && plan.keyboardInput -> recoverKeyboardLocked(state, plan.order)
+                release != null -> {
+                    val due = scheduler.nowNanos() + TimeUnit.MILLISECONDS.toNanos(plan.holdMs.coerceAtLeast(0L))
+                    lane.delayed = HidReport(
+                        release, due, retry = true, order = plan.order, keyboardInput = plan.keyboardInput,
+                    )
+                }
+                !ok && plan.retry -> {
+                    lane.delayed = HidReport(
+                        plan.report, scheduler.nowNanos() + RETRY_DELAY_NS, order = plan.order, role = plan.role,
+                    )
+                }
+                !ok && plan.role == HidReportRole.KEYBOARD_RECOVERY -> probes = dropPausedInputLocked(state)
+            }
+            scheduleReadyLocked(state)
+            probes
+        }
+        rejectProbes(cancelled)
+        recordSend(state, waitedMs, ok)
+        if (horizontalOk != null) recordSend(state, waitedMs, horizontalOk)
         plan.probe?.let { complete -> runCatching { complete(ok) } }
     }
 
-    private fun recoverKeyboardLocked(lane: Lane, failedOrder: Long?) {
+    private fun drainZoom(
+        state: Session, mouse: HidLane, generation: Long, plan: HidReport, waitedMs: Float, scrollVersion: Long,
+    ) {
+        val keyboard = state.keyboard
+        val previous = synchronized(lock) {
+            if (session !== state || mouse.generation != generation) return
+            keyboard.base
+        }
+        val control = previous.copyOf().apply { this[0] = (this[0].toInt() or LEFT_CTRL).toByte() }
+        val controlOk = transmit(state, KEYBOARD, control)
+        var wheelOk: Boolean? = null
+        var restored: Boolean? = null
+        if (controlOk) {
+            val sendWheel = synchronized(lock) {
+                if (session !== state) return
+                keyboard.accepted = control
+                mouse.generation == generation && state.scrollVersion == scrollVersion
+            }
+            if (sendWheel) wheelOk = transmit(state, MOUSE, plan.report)
+            // Mouse-only cancellation still restores the keyboard. A new session starts with neutral reports.
+            if (!synchronized(lock) { session === state }) return
+            restored = transmit(state, KEYBOARD, previous)
+        }
+        synchronized(lock) {
+            if (session !== state) return
+            if (restored == true) keyboard.accepted = previous
+            if (restored == false) recoverKeyboardLocked(state, plan.order)
+            if (mouse.generation == generation) {
+                if (wheelOk == true) mouse.accepted = plan.report
+                val remainder = mouse.pending.firstOrNull() as? HidDelta
+                if ((!controlOk || restored == false) && remainder?.kind == HidDeltaKind.ZOOM && remainder.order == plan.order) {
+                    mouse.pending.removeFirst()
+                }
+                mouse.finish()
+            }
+            scheduleReadyLocked(state)
+        }
+        recordSend(state, waitedMs, controlOk)
+        if (wheelOk != null) recordSend(state, waitedMs, wheelOk)
+        if (restored != null) recordSend(state, waitedMs, restored)
+    }
+
+    private fun isCurrent(state: Session, lane: HidLane, generation: Long, scrollVersion: Long?): Boolean =
+        synchronized(lock) {
+            session === state && lane.generation == generation && (scrollVersion == null || state.scrollVersion == scrollVersion)
+        }
+
+    private fun transmit(state: Session, reportId: Int, bytes: ByteArray): Boolean =
+        runCatching { state.send(reportId, bytes) }.getOrDefault(false)
+
+    private fun recordSend(state: Session, waitedMs: Float, ok: Boolean) {
+        runCatching { onSendResult(state.id, waitedMs, ok) }
+    }
+
+    private fun recoverKeyboardLocked(state: Session, failedOrder: Long?) {
         keyboardVersion++
+        state.inputPaused = true
+        val lane = state.keyboard
+        lane.generation++
+        lane.timer?.cancel()
+        lane.timer = null
         lane.pending.clear()
-        val neutral = Descriptors.keyboardReport(0)
-        lane.base = neutral
-        lane.accepted = neutral
-        lane.delayed = Report(neutral, scheduler.nowNanos(), retry = true, order = failedOrder)
+        val recovery = keyboardNeutralRecovery(failedOrder)
+        lane.base = recovery.report
+        lane.accepted = recovery.report
+        lane.delayed = recovery
     }
 
-    private fun takeReportLocked(lane: Lane): Report? {
-        lane.delayed?.let {
-            lane.delayed = null
-            return it
-        }
-        val next = lane.pending.firstOrNull() ?: return null
-        if (next !is Delta) lane.pending.removeFirst()
-        return when (next) {
-            is SetState -> {
-                lane.base = next.report
-                Report(
-                    next.report, next.enqueuedAt, retry = next.retry, order = next.order,
-                    keyboardInput = lane.id == KEYBOARD && next.order != null,
-                )
-            }
-            is Tap -> Report(
-                tapReport(lane, next), next.enqueuedAt, releaseTo = lane.base, holdMs = next.holdMs, order = next.order,
-                keyboardInput = lane.id == KEYBOARD,
-            )
-            is Probe -> Report(mouse(lane.accepted[0].toInt()), next.enqueuedAt, probe = next.complete)
-            is Delta -> {
-                val dx = next.x.coerceIn(-HID_LIMIT, HID_LIMIT)
-                val dy = next.y.coerceIn(-HID_LIMIT, HID_LIMIT)
-                val wheel = next.wheel.coerceIn(-HID_LIMIT, HID_LIMIT)
-                next.x -= dx
-                next.y -= dy
-                next.wheel -= wheel
-                if (next.isEmpty()) lane.pending.removeFirst()
-                lane.nextDeltaAt = scheduler.nowNanos() + DELTA_PERIOD_NS
-                Report(mouse(lane.base[0].toInt(), dx, dy, wheel), next.enqueuedAt)
-            }
-        }
-    }
+    private fun keyboardNeutralRecovery(order: Long? = null) = HidReport(
+        Descriptors.keyboardReport(0), scheduler.nowNanos(), retry = true, order = order,
+        role = HidReportRole.KEYBOARD_RECOVERY,
+    )
 
-    private fun tapReport(lane: Lane, tap: Tap): ByteArray {
-        if (lane.id == MOUSE) return mouse(lane.base[0].toInt() or tap.value)
-        val mods = lane.base[0].toInt() or tap.mods
-        val held = lane.base[2].toInt() and 0xFF
-        return if (held == 0 || held == tap.value) {
-            Descriptors.keyboardReport(mods, tap.value)
-        } else {
-            Descriptors.keyboardReport(mods, held, tap.value)
-        }
+    private fun dropPausedInputLocked(state: Session): List<(Boolean) -> Unit> {
+        val release = state.mouse.accepted[0].toInt() != 0
+        state.desiredButtons = 0
+        val probes = clearLaneLocked(state.mouse)
+        if (release) appendStateLocked(state, state.mouse, mouseReport(0), retry = true, ordered = false)
+        return probes
     }
 
     private fun rejectProbes(callbacks: List<(Boolean) -> Unit>) {
@@ -390,82 +455,25 @@ internal class HidInputQueue(
     }
 
     private class Session(val id: Long, val send: (Int, ByteArray) -> Boolean) {
-        val mouse = Lane(MOUSE, mouse(0))
-        val keyboard = Lane(KEYBOARD, Descriptors.keyboardReport(0))
+        val mouse = HidLane(MOUSE, mouseReport(0))
+        val keyboard = HidLane(KEYBOARD, Descriptors.keyboardReport(0))
         var desiredButtons = 0
         var nextOrder = 0L
+        var scrollVersion = 0L
+        var inputPaused = false
     }
-
-    private class Lane(val id: Int, neutral: ByteArray) {
-        val pending = ArrayDeque<Command>()
-        var base = neutral
-        var accepted = neutral
-        var timer: ScheduledHidTask? = null
-        var sending = false
-        var generation = 0L
-        var delayed: Report? = null
-        var nextDeltaAt: Long? = null
-        var inFlightProbe: ((Boolean) -> Unit)? = null
-        var inFlightOrder: Long? = null
-
-        fun firstOrdered(): Long? = inFlightOrder ?: delayed?.order ?: pending.firstNotNullOfOrNull(Command::order)
-    }
-
-    private sealed interface Command {
-        val enqueuedAt: Long
-        val order: Long? get() = null
-    }
-
-    private class SetState(
-        val report: ByteArray,
-        val retry: Boolean,
-        override val enqueuedAt: Long,
-        override val order: Long?,
-    ) : Command
-
-    private class Tap(
-        val value: Int,
-        val mods: Int,
-        val holdMs: Long,
-        override val enqueuedAt: Long,
-        override val order: Long,
-    ) : Command
-    private class Probe(val complete: (Boolean) -> Unit, override val enqueuedAt: Long) : Command
-    private class Delta(
-        var x: Int,
-        var y: Int,
-        var wheel: Int,
-        val scroll: Boolean,
-        override val enqueuedAt: Long,
-    ) : Command {
-        fun isEmpty(): Boolean = x == 0 && y == 0 && wheel == 0
-    }
-
-    private class Report(
-        val report: ByteArray,
-        val readySince: Long,
-        val releaseTo: ByteArray? = null,
-        val holdMs: Long = 0,
-        val retry: Boolean = false,
-        val probe: ((Boolean) -> Unit)? = null,
-        val order: Long? = null,
-        val keyboardInput: Boolean = false,
-    )
 
     private companion object {
         const val MOUSE = Descriptors.MOUSE_REPORT_ID.toInt()
         const val KEYBOARD = Descriptors.KEYBOARD_REPORT_ID.toInt()
+        const val HORIZONTAL_SCROLL = Descriptors.HORIZONTAL_SCROLL_REPORT_ID.toInt()
+        const val LEFT_CTRL = 0x01
         const val BUTTON_MASK = 0x1F
         const val MOUSE_LIMIT = 32
-        const val HID_LIMIT = 127
-        const val MAX_DELTA = HID_LIMIT * 32L
-        const val DELTA_PERIOD_NS = 8_000_000L
+        const val MAX_DELTA = HID_DELTA_LIMIT * 32L
         const val RETRY_DELAY_NS = 10_000_000L
 
         fun boundedDelta(current: Int, added: Int): Int =
             (current.toLong() + added).coerceIn(-MAX_DELTA, MAX_DELTA).toInt()
-
-        fun mouse(buttons: Int, dx: Int = 0, dy: Int = 0, wheel: Int = 0): ByteArray =
-            Descriptors.mouseReport(buttons, dx, dy, wheel)
     }
 }

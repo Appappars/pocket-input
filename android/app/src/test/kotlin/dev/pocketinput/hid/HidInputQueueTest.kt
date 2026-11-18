@@ -166,6 +166,138 @@ class HidInputQueueTest {
     }
 
     @Test
+    fun panSplitsBothAxesAndKeepsTheHeldButton() {
+        val rig = Rig().connected()
+        rig.queue.pressButton(1)
+        rig.queue.scroll(horizontal = 200, vertical = -70)
+        rig.queue.scroll(horizontal = 100, vertical = -140)
+        rig.clock.advance(100)
+
+        assertEquals(
+            listOf(mouse(1), mouse(1, wheel = -127), pan(127), mouse(1, wheel = -83), pan(127), pan(46)),
+            rig.reports,
+        )
+        assertArrayEquals(byteArrayOf(1, 0, 0, 0), rig.queue.currentReport(MOUSE))
+        assertArrayEquals(byteArrayOf(0), rig.queue.currentReport(HORIZONTAL_SCROLL))
+    }
+
+    @Test
+    fun zoomCombinesAdjacentDetentsAndRestoresHeldInput() {
+        val rig = Rig().connected()
+        rig.queue.pressButton(1)
+        rig.queue.keyDown(0x04, mods = 2)
+        rig.queue.zoom(200)
+        rig.queue.zoom(50)
+        rig.clock.advance(100)
+
+        assertEquals(
+            listOf(
+                mouse(1), key(2, 0x04),
+                key(3, 0x04), mouse(1, wheel = 127), key(2, 0x04),
+                key(3, 0x04), mouse(1, wheel = 123), key(2, 0x04),
+            ),
+            rig.reports,
+        )
+    }
+
+    @Test
+    fun zoomDoesNotMergeThroughKeyboardInputOrLetAClickInterleave() {
+        val rig = Rig().connected()
+        rig.queue.zoom(1)
+        rig.queue.keyTap(0x04)
+        rig.queue.zoom(-2)
+        rig.queue.tap()
+        rig.clock.advance(100)
+
+        assertEquals(
+            listOf(
+                key(1), mouse(0, wheel = 1), key(0), key(0, 0x04), key(0),
+                key(1), mouse(0, wheel = -2), key(0), mouse(1), mouse(0),
+            ),
+            rig.reports,
+        )
+    }
+
+    @Test
+    fun zoomStillWaitsForKeyboardAfterAScheduledDeltaCancelsItself() {
+        val rig = Rig().connected()
+        rig.queue.keyTap(0x04)
+        rig.clock.advance(0)
+        rig.queue.sendMotion(5, 0)
+        rig.queue.sendMotion(-5, 0)
+        rig.queue.zoom(1)
+        rig.clock.advance(19)
+        assertEquals(listOf(key(0, 0x04)), rig.reports)
+
+        rig.clock.advance(1)
+        assertEquals(listOf(key(0, 0x04), key(0), key(1), mouse(0, wheel = 1), key(0)), rig.reports)
+    }
+
+    @Test
+    fun zoomSkipsTheWheelIfCtrlFailsAndRestoresCtrlIfOnlyTheWheelFails() {
+        val failedCtrl = Rig().connected()
+        failedCtrl.failuresRemaining = 1
+        failedCtrl.queue.zoom(200)
+        failedCtrl.clock.advance(100)
+        assertEquals(listOf(key(1)), failedCtrl.reports)
+
+        val failedWheel = Rig().connected()
+        failedWheel.onTransmit = { it.id != MOUSE }
+        failedWheel.queue.zoom(2)
+        failedWheel.clock.advance(100)
+        assertEquals(listOf(key(1), mouse(0, wheel = 2), key(0)), failedWheel.reports)
+        assertEquals(listOf(true, false, true), failedWheel.results.map { it.ok })
+    }
+
+    @Test
+    fun failedZoomRestoreUsesNeutralRecoveryAndRejectsDependentText() {
+        val rig = Rig().connected()
+        val revision = rig.queue.keyboardRevision
+        var rejectRestore = true
+        rig.onTransmit = {
+            if (it == key(0) && rejectRestore) {
+                rejectRestore = false
+                false
+            } else {
+                true
+            }
+        }
+        rig.queue.zoom(200)
+        assertTrue(rig.queue.keyTaps(listOf(0x2A to 0), 1, revision))
+        rig.clock.advance(100)
+
+        assertEquals(listOf(key(1), mouse(0, wheel = 127), key(0), key(0)), rig.reports)
+        assertEquals(revision + 1, rig.queue.keyboardRevision)
+        assertArrayEquals(ByteArray(8), rig.queue.currentReport(KEYBOARD))
+    }
+
+    @Test
+    fun zoomStopsAfterCtrlIfTheSessionResets() {
+        val rig = Rig().connected()
+        rig.onTransmit = {
+            if (it == key(1)) rig.queue.resetInput()
+            true
+        }
+        rig.queue.zoom(200)
+        rig.clock.advance(100)
+
+        assertEquals(listOf(key(1), mouse(0), key(0)), rig.reports)
+    }
+
+    @Test
+    fun cancellingOnlyTheMouseCancelsTheWheelAndStillRestoresCtrl() {
+        val rig = Rig().connected()
+        rig.onTransmit = {
+            if (it == key(1)) rig.queue.cancelMouseInput(0)
+            true
+        }
+        rig.queue.zoom(200)
+        rig.clock.advance(100)
+
+        assertEquals(listOf(key(1), key(0), mouse(0)), rig.reports)
+    }
+
+    @Test
     fun disconnectCancelsOldTimersAndOnlyNewInputFollowsNeutralReports() {
         val rig = Rig().connected()
         val probes = mutableListOf<Boolean>()
@@ -301,7 +433,7 @@ class HidInputQueueTest {
         assertEquals(listOf(mouse(0)), rig.reports)
     }
 
-    private class Rig {
+    internal class Rig {
         val clock = TestScheduler()
         val reports = mutableListOf<Report>()
         val results = mutableListOf<Result>()
@@ -311,16 +443,18 @@ class HidInputQueueTest {
             scheduler = clock,
         )
         var failuresRemaining = 0
+        var onTransmit: (Report) -> Boolean = { true }
 
         fun open(id: Long) {
             queue.open(id) { reportId, packet ->
-                reports += Report(reportId, packet.map(Byte::toInt))
+                val report = Report(reportId, packet.map(Byte::toInt))
+                reports += report
                 sendTimes += TimeUnit.NANOSECONDS.toMillis(clock.nowNanos())
                 if (failuresRemaining > 0) {
                     failuresRemaining--
                     false
                 } else {
-                    true
+                    onTransmit(report)
                 }
             }
         }
@@ -334,7 +468,7 @@ class HidInputQueueTest {
         }
     }
 
-    private class TestScheduler : HidQueueScheduler {
+    internal class TestScheduler : HidQueueScheduler {
         private data class Task(val at: Long, val order: Long, val action: () -> Unit)
 
         private val tasks = PriorityQueue(compareBy(Task::at, Task::order))
@@ -362,17 +496,20 @@ class HidInputQueueTest {
         }
     }
 
-    private data class Report(val id: Int, val bytes: List<Int>)
-    private data class Result(val sessionId: Long, val waitedMs: Float, val ok: Boolean)
+    internal data class Report(val id: Int, val bytes: List<Int>)
+    internal data class Result(val sessionId: Long, val waitedMs: Float, val ok: Boolean)
 
-    private companion object {
+    internal companion object {
         const val KEYBOARD = 1
         const val MOUSE = 2
+        const val HORIZONTAL_SCROLL = 3
 
         fun mouse(buttons: Int, x: Int = 0, y: Int = 0, wheel: Int = 0) =
             Report(MOUSE, listOf(buttons, x, y, wheel))
 
         fun key(modifiers: Int, usage: Int = 0) =
             Report(KEYBOARD, listOf(modifiers, 0, usage, 0, 0, 0, 0, 0))
+
+        fun pan(units: Int) = Report(HORIZONTAL_SCROLL, listOf(units))
     }
 }

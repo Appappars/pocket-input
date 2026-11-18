@@ -1,18 +1,18 @@
 package dev.pocketinput.hid
 
 /**
- * HID report descriptor and report builders for PocketInput (Phase 0 HID spike).
+ * HID report descriptor and report builders for PocketInput.
  *
- * Source of HID_DESCRIPTOR (copied verbatim, bytes unchanged):
+ * Base keyboard and mouse reports:
  *   Repository: https://github.com/ToxicOrca/ghostboard-android-bluetooth-mouse-keyboard
  *   Commit:     135a3f7333553afe45467b04da514430c7383e0c
  *   File:       app/src/main/java/com/example/remoteinput/bluetooth/BluetoothHidManager.kt
- *   Note:       скопировано без изменений (copied without changes)
  */
 object Descriptors {
 
     const val KEYBOARD_REPORT_ID: Byte = 1
     const val MOUSE_REPORT_ID: Byte = 2
+    const val HORIZONTAL_SCROLL_REPORT_ID: Byte = 3
 
     // Boot interface subclasses (BluetoothHidDeviceAppSdpSettings)
     val SUBCLASS1: Byte = 1.toByte()
@@ -77,6 +77,16 @@ object Descriptors {
             0x75.toByte(), 0x08,
             0x95.toByte(), 0x01,
             0x81.toByte(), 0x06,
+
+            // AC Pan has its own report so the existing mouse packet stays four bytes.
+            0x85.toByte(), 0x03,
+            0x05.toByte(), 0x0C,
+            0x0A.toByte(), 0x38, 0x02,
+            0x15.toByte(), 0x81.toByte(),
+            0x25.toByte(), 0x7F,
+            0x75.toByte(), 0x08,
+            0x95.toByte(), 0x01,
+            0x81.toByte(), 0x06,
             0xC0.toByte(),
             0xC0.toByte()
     )
@@ -100,4 +110,6 @@ object Descriptors {
      */
     fun mouseReport(buttons: Int, dx: Int, dy: Int, wheel: Int): ByteArray =
         byteArrayOf(buttons.toByte(), dx.toByte(), dy.toByte(), wheel.toByte())
+
+    fun horizontalScrollReport(units: Int): ByteArray = byteArrayOf(units.toByte())
 }

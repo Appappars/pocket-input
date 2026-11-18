@@ -6,15 +6,182 @@ import dev.pocketinput.ui.trackpad.TrackpadAction.Button.HOLD_LEFT
 import dev.pocketinput.ui.trackpad.TrackpadAction.Button.LEFT_CLICK
 import dev.pocketinput.ui.trackpad.TrackpadAction.Button.RELEASE_LEFT
 import dev.pocketinput.ui.trackpad.TrackpadAction.Button.RIGHT_CLICK
+import dev.pocketinput.ui.trackpad.TrackpadAction.CancelScroll
 import dev.pocketinput.ui.trackpad.TrackpadAction.Motion
 import dev.pocketinput.ui.trackpad.TrackpadAction.Swipe
 import dev.pocketinput.ui.trackpad.TrackpadAction.Wheel
+import dev.pocketinput.ui.trackpad.TrackpadAction.Zoom
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrackpadGesturesTest {
+    @Test
+    fun pointerKeepsMovingAtTheEdgeUntilRelease() {
+        val input = Input(padWidthDp = 200f)
+        input.frame(1000, finger(1, x = 130f))
+        input.frame(1020, finger(1, x = 198f))
+        assertEquals(listOf(Motion(68, 0)), input.actions)
+        assertEquals(1036L, input.gestures.nextDeadlineMs)
+
+        input.gestures.advance(1036)
+        input.gestures.advance(1052)
+        assertEquals(3, input.actions.size)
+        assertTrue(input.actions.drop(1).all { it is Motion && it.dx > 0 && it.dy == 0 })
+
+        input.frame(1053, finger(1, x = 198f, pressed = false))
+        assertNull(input.gestures.nextDeadlineMs)
+        input.gestures.advance(1200)
+        assertEquals(3, input.actions.size)
+    }
+
+    @Test
+    fun movingBackStopsEdgeMotionWhileStillNearTheEdge() {
+        val input = Input(padHeightDp = 200f)
+        input.frame(1000, finger(1, y = 70f))
+        input.frame(1020, finger(1, y = 2f))
+        input.gestures.advance(1036)
+        val edgeStep = input.actions.last() as Motion
+        assertTrue(edgeStep.dy < 0)
+
+        input.frame(1040, finger(1, y = 8f))
+        assertNull(input.gestures.nextDeadlineMs)
+        input.gestures.advance(1200)
+        assertEquals(listOf(Motion(0, -68), edgeStep, Motion(0, 6)), input.actions)
+    }
+
+    @Test
+    fun smallStepsMovingInwardAccumulateAndStopEdgeMotion() {
+        val input = Input(padHeightDp = 200f)
+        input.frame(1000, finger(1, y = 70f))
+        input.frame(1020, finger(1, y = 2f))
+        input.gestures.advance(1036)
+        val edgeStep = input.actions.last() as Motion
+        input.frame(1040, finger(1, y = 2.5f))
+        input.frame(1047, finger(1, y = 3f))
+        input.gestures.advance(1200)
+
+        assertEquals(listOf(Motion(0, -68), edgeStep, Motion(0, 1)), input.actions)
+        assertNull(input.gestures.nextDeadlineMs)
+    }
+
+    @Test
+    fun aSmallStepIntoTheEdgeZoneStillStartsEdgeMotion() {
+        val input = Input(padWidthDp = 200f)
+        input.frame(1000, finger(1, x = 130f))
+        input.frame(1020, finger(1, x = 181.8f))
+        input.frame(1040, finger(1, x = 182.2f))
+        assertEquals(1056L, input.gestures.nextDeadlineMs)
+        input.gestures.advance(1056)
+        assertTrue((input.actions.last() as Motion).dx > 0)
+    }
+
+    @Test
+    fun edgeMotionWhileDraggingStopsBeforeTheLeftButtonIsReleased() {
+        val input = Input(padWidthDp = 200f)
+        input.frame(1000, finger(1, x = 130f))
+        input.frame(1150, finger(1, x = 198f))
+        input.gestures.advance(1166)
+        input.frame(1170, finger(1, x = 198f, pressed = false))
+        input.gestures.advance(1300)
+
+        assertEquals(HOLD_LEFT, input.actions.first())
+        assertEquals(RELEASE_LEFT, input.actions.last())
+        assertEquals(4, input.actions.size)
+        assertNull(input.gestures.nextDeadlineMs)
+    }
+
+    @Test
+    fun padResizeUpdatesTheEdgeWithoutCancellingTheDrag() {
+        val input = Input(padWidthDp = 200f)
+        input.frame(1000, finger(1, x = 130f))
+        input.frame(1150, finger(1, x = 198f))
+        input.padSize = TrackpadSize(250f, 0f)
+        input.gestures.advance(1166)
+        assertEquals(listOf(HOLD_LEFT, Motion(68, 0)), input.actions)
+        assertNull(input.gestures.nextDeadlineMs)
+
+        input.frame(1172, finger(1, x = 205f))
+        input.frame(1175, finger(1, x = 205f, pressed = false))
+        assertEquals(listOf(HOLD_LEFT, Motion(68, 0), Motion(7, 0), RELEASE_LEFT), input.actions)
+    }
+
+    @Test
+    fun touchingAnEdgeWithoutApproachingItDoesNotStartMotion() {
+        val input = Input(padWidthDp = 200f)
+        input.frame(1000, finger(1, x = 198f))
+        input.gestures.advance(1150)
+        input.frame(1151, finger(1, x = 198f, pressed = false))
+        assertEquals(listOf(LEFT_CLICK), input.actions)
+        assertNull(input.gestures.nextDeadlineMs)
+    }
+
+    @Test
+    fun movingTwoFingersSidewaysPansHorizontally() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = 20f), finger(2, x = 60f))
+        assertEquals(listOf(Wheel(0, horizontal = -1)), input.actions)
+    }
+
+    @Test
+    fun stretchingTwoFingersZoomsEvenWithACentroidAtRest() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = -6f), finger(2, x = 46f))
+        assertEquals(listOf(Zoom(2)), input.actions)
+    }
+
+    @Test
+    fun shrinkingTwoFingersZoomsOutWithoutVerticalScroll() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = 4f, y = 2f), finger(2, x = 36f, y = 2f))
+        assertEquals(listOf(Zoom(-2)), input.actions)
+    }
+
+    @Test
+    fun diagonalPanMovesBothAxesAndIgnoresLaterSpread() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = 20f, y = 20f), finger(2, x = 60f, y = 20f))
+        input.frame(1040, finger(1, x = 12f, y = 20f), finger(2, x = 68f, y = 20f))
+        assertEquals(listOf(Wheel(1, horizontal = -1)), input.actions)
+    }
+
+    @Test
+    fun liftingOneFingerAfterPinchDoesNotMoveTheCursor() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = -6f), finger(2, x = 46f))
+        input.frame(1040, finger(1, x = -6f), finger(2, x = 46f, pressed = false))
+        input.frame(1060, finger(1, x = -46f))
+        input.frame(1070, finger(1, x = -46f, pressed = false))
+        assertEquals(listOf(Zoom(2)), input.actions)
+    }
+
+    @Test
+    fun cancellingAnActivePinchCancelsQueuedScroll() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1020, finger(1, x = -6f), finger(2, x = 46f))
+        input.gestures.cancel()
+        assertEquals(listOf(Zoom(2), CancelScroll), input.actions)
+        assertNull(input.gestures.nextDeadlineMs)
+    }
+
+    @Test
+    fun addingAThirdFingerDoesNotTurnARecognizedPanIntoASwipe() {
+        val input = Input()
+        input.frame(1000, finger(1), finger(2, x = 40f))
+        input.frame(1010, finger(1, y = -10f), finger(2, x = 40f, y = -10f))
+        input.frame(1020, finger(1, y = -10f), finger(2, x = 40f, y = -10f), finger(3))
+        input.frame(1030, finger(1, y = -90f), finger(2, x = 40f, y = -90f), finger(3, y = -80f))
+        input.frame(1040, finger(1, pressed = false), finger(2, pressed = false), finger(3, pressed = false))
+        assertTrue(input.actions.isEmpty())
+    }
+
     @Test
     fun heldContactPressesLeftBeforeSendingItsFirstMovement() {
         val input = Input()
@@ -213,20 +380,22 @@ class TrackpadGesturesTest {
         assertTrue(input.actions.isEmpty())
 
         input.frame(2010, finger(1), finger(2))
-        input.frame(2015, finger(1, y = -10f), finger(2, y = -10f))
-        input.frame(2020, finger(1, y = -10f), finger(2, y = -10f), finger(3, y = -10f))
+        input.frame(2015, finger(1, y = -4f), finger(2, y = -4f))
+        input.frame(2020, finger(1, y = -4f), finger(2, y = -4f), finger(3, y = -4f))
         input.frame(2030, finger(1, y = -80f), finger(2, y = -80f), finger(3, y = -80f))
         input.frame(2040, finger(1), finger(2, pressed = false), finger(3, pressed = false))
         input.frame(2050, finger(1, pressed = false))
         assertEquals(listOf(Swipe(TrackpadMath.ThreeFinger.UP)), input.actions)
     }
 
-    private class Input {
+    private class Input(padWidthDp: Float = 0f, padHeightDp: Float = 0f) {
         var leftLatched = false
+        var padSize = TrackpadSize(padWidthDp, padHeightDp)
         val actions = mutableListOf<TrackpadAction>()
         val gestures = TrackpadGestures(
             SettingsState(),
             density = 1f,
+            padSize = { padSize },
             isLeftLatched = { leftLatched },
             emit = { actions.add(it) },
         )

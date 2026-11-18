@@ -1,6 +1,7 @@
 package dev.pocketinput.ui.trackpad
 
 import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
@@ -23,6 +24,7 @@ object TrackpadMath {
 
     /** Одно деление HID-колеса на 20 dp движения пальца. */
     const val SCROLL_DP_PER_DETENT = 20f
+    private val logPinchStep = ln(1.1f)
 
     /** Удержание для правой кнопки, мс. */
     const val LONG_PRESS_MS = 500L
@@ -66,6 +68,11 @@ object TrackpadMath {
     fun scrollUnits(dyDp: Float, gain: Float = 1f, invert: Boolean = false): Float {
         val units = dyDp / SCROLL_DP_PER_DETENT * gain
         return if (invert) units else -units
+    }
+
+    fun pinchUnits(previousSpanDp: Float, spanDp: Float): Float {
+        val ratio = spanDp.coerceAtLeast(1f) / previousSpanDp.coerceAtLeast(1f)
+        return ln(ratio) / logPinchStep
     }
 
     /** Удержание без сдвига не меньше [holdThresholdMs] — правая кнопка. */

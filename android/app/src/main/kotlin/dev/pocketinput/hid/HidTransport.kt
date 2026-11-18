@@ -174,7 +174,9 @@ class HidTransport(context: Context, private val onLinkChanged: (LinkSnapshot) -
         publish(link.copy(keyboardRevision = input.keyboardRevision))
     }
     fun sendMotion(dx: Int, dy: Int) = submitInput { input.sendMotion(dx, dy) }
-    fun wheel(units: Int) = submitInput { input.wheel(units) }
+    fun scroll(horizontal: Int, vertical: Int) = submitInput { input.scroll(horizontal, vertical) }
+    fun zoom(units: Int) = submitInput { input.zoom(units) }
+    fun cancelScroll() = input.cancelScroll()
 
     fun keyTap(usage: Int, mods: Int = 0, expectedSessionId: Long? = null): Boolean =
         inputEnabled && input.keyTap(usage, mods, expectedSessionId = expectedSessionId)
@@ -324,6 +326,7 @@ class HidTransport(context: Context, private val onLinkChanged: (LinkSnapshot) -
                 val report = if (connected != null) input.currentReport(id.toInt()) else when (id) {
                     Descriptors.MOUSE_REPORT_ID -> Descriptors.mouseReport(0, 0, 0, 0)
                     Descriptors.KEYBOARD_REPORT_ID -> Descriptors.keyboardReport(0)
+                    Descriptors.HORIZONTAL_SCROLL_REPORT_ID -> Descriptors.horizontalScrollReport(0)
                     else -> null
                 }
                 if (report == null) return

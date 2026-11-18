@@ -80,7 +80,7 @@ for rid in sorted(reports):
 
 ok = True
 print()
-print("сверка с отправителем (keyboardReport = 8 байт, mouseReport = 4 байта):")
+print("сверка с отправителем:")
 if reports.get(1, {}).get("bits") == 64:
     print("  OK: report ID 1 = 8 байт")
 else:
@@ -91,8 +91,18 @@ if reports.get(2, {}).get("bits") == 32:
 else:
     print("  FAIL: report ID 2 = %s бит" % reports.get(2, {}).get("bits"))
     ok = False
+pan = reports.get(3, {})
+if pan.get("bits") == 8 and any(
+    f["kind"] == "Input" and f["usage_page"] == 0x0C and f["usage"] == 0x0238
+    for f in pan.get("fields", [])
+):
+    print("  OK: report ID 3 = 1 байт AC Pan")
+else:
+    print("  FAIL: report ID 3 должен содержать 1 байт AC Pan")
+    ok = False
 has_gd = any((f["usage_page"] == 0x01) for rid in reports for f in reports[rid]["fields"])
 print("  %s: Usage Page Generic Desktop (0x01) %s" % ("OK" if has_gd else "FAIL",
                                                       "найден" if has_gd else "отсутствует"))
 print()
 print("ИТОГ:", "дескриптор согласован с репортами" if ok and has_gd else "ЕСТЬ РАСХОЖДЕНИЯ")
+sys.exit(0 if ok and has_gd else 1)

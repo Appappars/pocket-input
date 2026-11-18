@@ -60,5 +60,16 @@ class DescriptorsTest {
     fun reportIds() {
         assertEquals(1.toByte(), Descriptors.KEYBOARD_REPORT_ID)
         assertEquals(2.toByte(), Descriptors.MOUSE_REPORT_ID)
+        assertEquals(3.toByte(), Descriptors.HORIZONTAL_SCROLL_REPORT_ID)
+    }
+
+    @Test
+    fun horizontalScrollUsesSignedAcPanInItsOwnReport() {
+        assertTrue(containsSequence(
+            Descriptors.HID_DESCRIPTOR,
+            byteArrayOf(0x85.toByte(), 3, 0x05, 0x0C, 0x0A, 0x38, 0x02),
+        ))
+        assertArrayEquals(byteArrayOf(-127), Descriptors.horizontalScrollReport(-127))
+        assertArrayEquals(byteArrayOf(127), Descriptors.horizontalScrollReport(127))
     }
 }
