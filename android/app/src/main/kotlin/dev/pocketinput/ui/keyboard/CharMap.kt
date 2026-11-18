@@ -48,8 +48,21 @@ object CharMap {
         'ь' to 0x10, 'б' to 0x36, 'ю' to 0x37, 'ё' to 0x35,
     )
 
+    /**
+     * Знаки, которые в русской раскладке Windows стоят на других клавишах.
+     * Без этой таблицы запятая уходила как US-позиция и на русской раскладке ПК
+     * превращалась в «б» (находка владельца продукта, 18.11).
+     */
+    private val ruOverrides: Map<Char, Pair<Int, Int>> = mapOf(
+        ',' to (0x38 to LSHIFT),   // Shift + «/» = запятая
+        '.' to (0x38 to 0),        // «/» = точка
+        '/' to (0x31 to LSHIFT),   // Shift + «\» = косая черта
+        '\\' to (0x31 to 0),      // «\» = обратная косая
+    )
+
     /** Результат: usage-код и дополнительные модификаторы (0, если не нужны). */
-    fun map(ch: Char): Pair<Int, Int>? {
+    fun map(ch: Char, ruLayout: Boolean = false): Pair<Int, Int>? {
+        if (ruLayout) ruOverrides[ch]?.let { return it }
         latin[ch]?.let { return it to 0 }
         shifted[ch]?.let { return it to LSHIFT }
         cyrillic[ch]?.let { return it to 0 }

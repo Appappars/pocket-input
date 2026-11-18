@@ -30,6 +30,12 @@ object TrackpadMath {
     /** Удержание для правой кнопки, мс. */
     const val LONG_PRESS_MS = 500L
 
+    /**
+     * Второй тап, который держат дольше этого времени, — не двойной клик, а начало
+     * перетаскивания (как «tap twice and drag» на тачпаде ноутбука).
+     */
+    const val TAP_AND_HOLD_MS = 150L
+
     /** Порог свайпа тремя пальцами, dp. */
     const val THREE_FINGER_DP = 60f
 

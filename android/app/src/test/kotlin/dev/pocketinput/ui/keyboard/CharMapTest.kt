@@ -61,6 +61,21 @@ class CharMapTest {
     }
 
     @Test
+    fun russianLayout_movesPunctuationToRussianKeys() {
+        // В русской раскладке запятая — это Shift+«/», точка — «/», иначе выходило «б» вместо запятой.
+        assertEquals(0x38 to CharMap.LSHIFT, CharMap.map(',', ruLayout = true))
+        assertEquals(0x38 to 0, CharMap.map('.', ruLayout = true))
+        assertEquals(0x31 to CharMap.LSHIFT, CharMap.map('/', ruLayout = true))
+        // знаки, которые в RU стоят там же, что и в US, не меняются
+        assertEquals(0x2D to 0, CharMap.map('-', ruLayout = true))
+        assertEquals(0x1E to CharMap.LSHIFT, CharMap.map('!', ruLayout = true))
+        // буквы не зависят от режима
+        assertEquals(0x36 to 0, CharMap.map('б', ruLayout = true))
+        // US-режим остаётся прежним
+        assertEquals(0x36 to 0, CharMap.map(','))
+    }
+
+    @Test
     fun emojiAndCjk_areNotExpressible() {
         // Эмодзи вне BMP: в строке это две суррогатные единицы, каждая не имеет usage-кода.
         assertNull(CharMap.map('\uD83D'))

@@ -163,9 +163,15 @@ class HidTransport(private val context: Context) {
         }
     }
 
-    fun pressButton(bit: Int) = setButtons(buttonsMask or (1 shl (bit - 1)))
+    fun pressButton(bit: Int) {
+        Log.d(TAG, "pressButton bit=$bit")
+        setButtons(buttonsMask or (1 shl (bit - 1)))
+    }
 
-    fun releaseButton(bit: Int) = setButtons(buttonsMask and (1 shl (bit - 1)).inv())
+    fun releaseButton(bit: Int) {
+        Log.d(TAG, "releaseButton bit=$bit")
+        setButtons(buttonsMask and (1 shl (bit - 1)).inv())
+    }
 
     fun releaseAllButtons() = setButtons(0)
 
