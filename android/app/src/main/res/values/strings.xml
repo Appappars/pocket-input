@@ -62,6 +62,9 @@
     <string name="kb_windows_now_ru">Windows is on RU</string>
     <string name="kb_android_keyboard">Android keyboard…</string>
     <string name="kb_symbols">Symbols</string>
+    <string name="kb_special_keys">Keys</string>
+    <string name="kb_tab_on_pc">Tab on PC</string>
+    <string name="kb_escape_on_pc">Esc on PC</string>
     <string name="back">Back</string>
     <string name="status_state">HID state: %1$s</string>
     <string name="status_peer">PC: %1$s</string>

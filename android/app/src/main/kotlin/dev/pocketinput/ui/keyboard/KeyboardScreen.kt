@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -40,6 +41,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -57,6 +60,7 @@ import dev.pocketinput.hid.HidTransport
 import dev.pocketinput.hid.LinkState
 import dev.pocketinput.ui.link.LinkStatusBar
 import dev.pocketinput.ui.trackpad.TrackpadSurface
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -96,12 +100,16 @@ fun KeyboardScreen(
     var queueRejected by remember(transport, sessionId, editRevision) { mutableStateOf(false) }
     var layoutMenu by remember(transport, sessionId) { mutableStateOf(false) }
     var symbolMenu by remember(transport, sessionId) { mutableStateOf(false) }
+    var specialKeysMenu by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf(false) }
+    var restoreImeOnDismiss by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf(false) }
 
     val context = LocalContext.current
     val focus = remember { FocusRequester() }
     val ime = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
-    var requestInitialKeyboard by remember(transport, sessionId) { mutableStateOf(editorActive) }
+    val window = LocalWindowInfo.current
+    var keyboardRequest by remember(transport, sessionId) { mutableIntStateOf(if (editorActive) 1 else 0) }
+    var appliedKeyboardRequest by remember(transport, sessionId) { mutableIntStateOf(0) }
 
     LaunchedEffect(editorActive) {
         if (!editorActive) ime?.hide()
@@ -163,6 +171,27 @@ fun KeyboardScreen(
         ))
     }
 
+    fun openSpecialKeys() {
+        if (!isCurrentEditor()) return
+        layoutMenu = false
+        symbolMenu = false
+        restoreImeOnDismiss = imeVisible
+        specialKeysMenu = true
+    }
+
+    fun dismissSpecialKeys() {
+        if (!specialKeysMenu) return
+        specialKeysMenu = false
+        if (restoreImeOnDismiss) keyboardRequest++
+        restoreImeOnDismiss = false
+    }
+
+    fun sendSpecialKey(usage: Int) {
+        if (!specialKeysMenu) return
+        dismissSpecialKeys()
+        if (submitKeys(listOf(usage to 0))) resetEditor()
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -183,8 +212,16 @@ fun KeyboardScreen(
                         text = stringResource(R.string.keyboard_title),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                        textAlign = if (editorActive) TextAlign.Center else TextAlign.End,
                     )
+                    if (editorActive) {
+                        SpecialKeysMenu(
+                            expanded = specialKeysMenu,
+                            onOpen = ::openSpecialKeys,
+                            onDismiss = ::dismissSpecialKeys,
+                            onKey = ::sendSpecialKey,
+                        )
+                    }
                 }
 
                 LinkStatusBar(
@@ -198,21 +235,33 @@ fun KeyboardScreen(
 
             if (editorActive) {
                 key(transport, sessionId, editRevision, editorRevision) {
-                    OutlinedTextField(
-                        value = field,
-                        onValueChange = ::handleChange,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).focusRequester(focus),
-                        label = { Text(stringResource(R.string.kb_editor)) },
-                        maxLines = if (compact) 1 else 2,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.None,
-                            autoCorrectEnabled = false,
-                            imeAction = ImeAction.None,
-                        ),
-                    )
-                    LaunchedEffect(Unit) {
-                        if (requestInitialKeyboard || imeVisible) {
-                            requestInitialKeyboard = false
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                        OutlinedTextField(
+                            value = field,
+                            onValueChange = ::handleChange,
+                            modifier = Modifier.weight(1f).focusRequester(focus),
+                            label = { Text(stringResource(R.string.kb_editor)) },
+                            maxLines = if (compact) 1 else 2,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                autoCorrectEnabled = false,
+                                imeAction = ImeAction.None,
+                            ),
+                        )
+                        if (compact) {
+                            SpecialKeysMenu(
+                                expanded = specialKeysMenu,
+                                onOpen = ::openSpecialKeys,
+                                onDismiss = ::dismissSpecialKeys,
+                                onKey = ::sendSpecialKey,
+                                modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+                            )
+                        }
+                    }
+                    LaunchedEffect(keyboardRequest) {
+                        if (keyboardRequest != appliedKeyboardRequest || imeVisible) {
+                            snapshotFlow { window.isWindowFocused }.first { it }
+                            appliedKeyboardRequest = keyboardRequest
                             focus.requestFocus()
                             ime?.show()
                         }
@@ -321,6 +370,29 @@ fun KeyboardScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SpecialKeysMenu(
+    expanded: Boolean,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+    onKey: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        TextButton(onClick = onOpen) { Text(stringResource(R.string.kb_special_keys)) }
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.kb_tab_on_pc)) },
+                onClick = { onKey(Usages.TAB) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.kb_escape_on_pc)) },
+                onClick = { onKey(Usages.ESC) },
+            )
         }
     }
 }
