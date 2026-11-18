@@ -1,13 +1,13 @@
 # PocketInput
 
 Android-телефон как Bluetooth HID-клавиатура/мышь/указка для Windows-ПК:
-телефон регистрируется как HID-композит, двигает курсор и печатает на реальном
-ПК; ПК-агент (Python) — равноправный запасной транспорт. Полная спецификация —
-в каталоге `spec/`, дорожная карта и QA-план — `spec/05-roadmap-qa.md`.
+телефон регистрируется как HID-композит, двигает курсор и передаёт клавиши
+через системный Bluetooth Windows. ПК-агент запланирован как запасной транспорт.
 
-Текущая стадия: **фаза 0 — спайк HID** (задачи в разделе 5.3 спеки,
-zero-decision rule). Фаза 0 не закрывается, пока в
-`docs/measurement/phase0-report.md` есть строки «не проверено».
+Актуальная сборка — **0.3.3-live-keyboard** в `dist/`. Порядок установки и сценарии
+проверки — в [TESTING.md](TESTING.md), ожидаемое поведение — в
+[спецификации устойчивости](docs/phase1-reliability.md).
+Состояние проверок на оборудовании фиксируется в `docs/measurement/`.
 
 ## Структура репозитория (спека, раздел 5.1)
 
@@ -31,8 +31,8 @@ pocket-input/
 
 ```bash
 cd android
-gradle :app:assembleDebug        # debug-APK
-gradle :app:testDebugUnitTest    # JVM-юнит-тесты
+./gradlew :app:assembleDebug       # debug-APK
+./gradlew :app:testDebugUnitTest   # JVM-юнит-тесты
 ```
 
 ### Проверка HID-стека на ПК (фаза 0)
