@@ -38,6 +38,10 @@
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>
+    <string name="kb_system_hint">Text is typed with the phone keyboard. Modifiers, arrows, Esc and Tab are on the panel below.</string>
+    <string name="kb_tap_to_open">Tap the field to open the phone keyboard</string>
+    <string name="kb_field_hint">Cyrillic goes to the PC as key positions: letters appear if the PC has a Russian layout.</string>
+    <string name="kb_unsupported">Skipped characters: %1$d. Emoji and other symbols outside the PC keyboard cannot be sent in HID mode — agent mode is required (phase 2).</string>
     <string name="back">Back</string>
     <string name="status_state">HID state: %1$s</string>
     <string name="status_peer">PC: %1$s</string>

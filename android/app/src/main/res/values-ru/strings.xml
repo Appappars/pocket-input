@@ -38,6 +38,10 @@
     <string name="settings_theme_system">Системная</string>
     <string name="settings_theme_dark">Тёмная</string>
     <string name="settings_theme_light">Светлая</string>
+    <string name="kb_system_hint">Текст набирается клавиатурой телефона. Модификаторы, стрелки, Esc и Tab — на панели ниже.</string>
+    <string name="kb_tap_to_open">Коснитесь поля, чтобы открыть клавиатуру телефона</string>
+    <string name="kb_field_hint">Кириллица уйдёт в ПК как позиции клавиш: буквы появятся, если на ПК включена русская раскладка.</string>
+    <string name="kb_unsupported">Пропущено символов: %1$d. Эмодзи и другие символы вне клавиатуры ПК в HID-режиме не передаются — нужен режим агента (фаза 2).</string>
     <string name="back">Назад</string>
     <string name="status_state">Состояние HID: %1$s</string>
     <string name="status_peer">ПК: %1$s</string>
