@@ -14,6 +14,31 @@
     <string name="empty_devices_bt_off">Bluetooth выключен. Включите его, чтобы увидеть спаренные устройства.</string>
     <string name="empty_devices">Нет спаренных устройств. Спарьте ПК в настройках Bluetooth.</string>
     <string name="trackpad_hint">Ведите пальцем — курсор, тап — клик.</string>
+    <!-- фаза 1: жесты трекпада -->
+    <string name="trackpad_hint_full">Ведите — курсор. Тап — клик, двойной тап — двойной клик, удержание 0,5 с — правая кнопка. Двумя пальцами — скролл, тремя вверх — рабочий стол, тремя влево/вправо — переключение окон.</string>
+    <string name="btn_lmb">ЛКМ</string>
+    <string name="btn_rmb">ПКМ</string>
+    <string name="btn_lmb_latched">ЛКМ зафиксирована — ведите пальцем</string>
+    <string name="btn_keyboard">Клавиатура</string>
+    <string name="btn_settings">Настройки</string>
+    <!-- фаза 1: клавиатура -->
+    <string name="keyboard_title">Клавиатура</string>
+    <string name="keyboard_cyrillic_hint">Кириллица требует режима агента или русской раскладки на ПК. Сейчас уйдут позиции клавиш, а не буквы.</string>
+    <string name="keyboard_sticky_hint">Модификатор зафиксирован</string>
+    <string name="layer_en">EN</string>
+    <string name="layer_ru">РУ</string>
+    <string name="layer_sym">123</string>
+    <string name="layer_sym2">+=-</string>
+    <!-- фаза 1: настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_sensitivity">Чувствительность указателя</string>
+    <string name="settings_scroll">Скорость скролла</string>
+    <string name="settings_vibration">Вибро-отклик</string>
+    <string name="settings_theme">Тема</string>
+    <string name="settings_theme_system">Системная</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="back">Назад</string>
     <string name="status_state">Состояние HID: %1$s</string>
     <string name="status_peer">ПК: %1$s</string>
     <string name="open_bt_settings">Настройки Bluetooth — сделать телефон видимым</string>

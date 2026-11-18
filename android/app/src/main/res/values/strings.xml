@@ -14,6 +14,31 @@
     <string name="empty_devices_bt_off">Bluetooth is off. Turn it on to see paired devices.</string>
     <string name="empty_devices">No paired devices. Pair the PC in Bluetooth settings.</string>
     <string name="trackpad_hint">Drag to move the cursor, tap to click.</string>
+    <!-- phase 1: trackpad gestures -->
+    <string name="trackpad_hint_full">Drag to move. Tap to click, double tap to double click, hold 0.5 s for right click. Two fingers scroll, three fingers up shows the desktop, three fingers left/right switch windows.</string>
+    <string name="btn_lmb">LMB</string>
+    <string name="btn_rmb">RMB</string>
+    <string name="btn_lmb_latched">LMB latched — drag your finger</string>
+    <string name="btn_keyboard">Keyboard</string>
+    <string name="btn_settings">Settings</string>
+    <!-- phase 1: keyboard -->
+    <string name="keyboard_title">Keyboard</string>
+    <string name="keyboard_cyrillic_hint">Cyrillic needs the agent mode or a Russian layout on the PC. Right now key positions are sent, not letters.</string>
+    <string name="keyboard_sticky_hint">Modifier locked</string>
+    <string name="layer_en">EN</string>
+    <string name="layer_ru">RU</string>
+    <string name="layer_sym">123</string>
+    <string name="layer_sym2">+=-</string>
+    <!-- phase 1: settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_sensitivity">Pointer sensitivity</string>
+    <string name="settings_scroll">Scroll speed</string>
+    <string name="settings_vibration">Haptics</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="back">Back</string>
     <string name="status_state">HID state: %1$s</string>
     <string name="status_peer">PC: %1$s</string>
     <string name="open_bt_settings">Bluetooth settings — make phone discoverable</string>

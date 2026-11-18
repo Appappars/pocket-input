@@ -131,6 +131,96 @@ class HidTransport(private val context: Context) {
         }
     }
 
+    // --- Кнопки мыши, колесо, клавиатура (фаза 1) ---
+
+    /** Накопленное состояние кнопок: бит 0 ЛКМ, 1 ПКМ, 2 СКМ, 3 назад, 4 вперёд. */
+    private var buttonsMask = 0
+
+    val currentButtons: Int get() = buttonsMask
+
+    /** Отправить отчёт с текущей маской кнопок (движение при зажатой кнопке). */
+    fun sendMotion(dx: Int, dy: Int) {
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                    Descriptors.mouseReport(buttonsMask, dx, dy, 0))) {
+                Log.w(TAG, "sendReport failed (motion)")
+            }
+        }
+    }
+
+    /** Новое состояние маски кнопок одним отчётом. */
+    fun setButtons(mask: Int, wheel: Int = 0) {
+        buttonsMask = mask and 0x1F
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                    Descriptors.mouseReport(buttonsMask, 0, 0, wheel))) {
+                Log.w(TAG, "sendReport failed (buttons)")
+            }
+        }
+    }
+
+    fun pressButton(bit: Int) = setButtons(buttonsMask or (1 shl (bit - 1)))
+
+    fun releaseButton(bit: Int) = setButtons(buttonsMask and (1 shl (bit - 1)).inv())
+
+    fun releaseAllButtons() = setButtons(0)
+
+    /** Вертикальный скролл: единица — 1/120 щелчка колеса, знак = направление. */
+    fun wheel(units: Int) {
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        val clamped = units.coerceIn(-127, 127)
+        if (clamped == 0) return
+        sendExecutor.execute {
+            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                    Descriptors.mouseReport(buttonsMask, 0, 0, clamped))) {
+                Log.w(TAG, "sendReport failed (wheel)")
+            }
+        }
+    }
+
+    /** Нажатие клавиши с модификаторами: down + пауза + up (без автоповтора). */
+    fun keyTap(usage: Int, mods: Int = 0, holdMs: Long = 20) {
+        Log.d(TAG, "keyTap usage=0x${usage.toString(16)} mods=0x${mods.toString(16)}")
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
+                Descriptors.keyboardReport(mods, usage))
+            try {
+                Thread.sleep(holdMs)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@execute
+            }
+            hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
+                Descriptors.keyboardReport(mods))
+        }
+    }
+
+    /** Клавиша вниз без отпускания: автоповтор делает ОС ПК, не телефон. */
+    fun keyDown(usage: Int, mods: Int = 0) {
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
+                Descriptors.keyboardReport(mods, usage))
+        }
+    }
+
+    fun keyUp(mods: Int = 0) {
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
+                Descriptors.keyboardReport(mods))
+        }
+    }
+
     fun sendKeyboard(modifier: Int, vararg keys: Int) {
         val hid = hidDevice ?: return
         val dev = device ?: return
