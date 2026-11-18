@@ -3,7 +3,9 @@ package dev.pocketinput.ui.connect
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
 import dev.pocketinput.R
 import dev.pocketinput.hid.HidTransport
 import kotlinx.coroutines.delay
@@ -106,6 +110,17 @@ fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                // Фаза 0: состояние registerApp/connected видно без logcat.
+                Text(
+                    text = stringResource(R.string.status_state, transport.status),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                transport.peerName?.let { peer ->
+                    Text(
+                        text = stringResource(R.string.status_peer, peer),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
 
@@ -117,6 +132,22 @@ fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.pair_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val context = LocalContext.current
+        OutlinedButton(
+            onClick = {
+                runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
+            Text(stringResource(R.string.open_bt_settings))
         }
 
         Spacer(Modifier.height(12.dp))

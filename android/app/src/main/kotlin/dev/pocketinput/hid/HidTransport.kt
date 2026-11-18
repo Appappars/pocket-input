@@ -10,6 +10,9 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.util.concurrent.Executors
 
 /**
@@ -37,8 +40,12 @@ class HidTransport(private val context: Context) {
     private var device: BluetoothDevice? = null
     private var profileProxyObtained: Boolean? = null
 
-    @Volatile
-    var status: String = "idle"
+    /** Наблюдаемое состояние для UI (фаза 0: тест на живом телефоне без logcat). */
+    var status: String by mutableStateOf("idle")
+        private set
+
+    /** Имя ПК, к которому подключён HID-канал (null — не подключён). */
+    var peerName: String? by mutableStateOf(null)
         private set
 
     /** Все sendReport/replyReport уходят отсюда, не из UI-потока. */
@@ -71,6 +78,7 @@ class HidTransport(private val context: Context) {
         hidDevice?.let { bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, it) }
         hidDevice = null
         device = null
+        peerName = null
         profileProxyObtained = null
         status = "stopped"
         sendExecutor.shutdown()
@@ -147,7 +155,10 @@ class HidTransport(private val context: Context) {
     private val hidCallback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
             Log.d(TAG, "onAppStatusChanged: registered=$registered device=${pluggedDevice?.name}")
-            if (pluggedDevice != null) device = pluggedDevice
+            if (pluggedDevice != null) {
+                device = pluggedDevice
+                peerName = pluggedDevice.name ?: pluggedDevice.address
+            }
             status = if (registered) "registered" else "unregistered"
         }
 
@@ -156,10 +167,12 @@ class HidTransport(private val context: Context) {
             when (state) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     device = dev
+                    peerName = dev.name ?: dev.address
                     status = "connected"
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     if (device == dev) device = null
+                    peerName = null
                     status = "registered"
                 }
             }

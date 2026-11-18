@@ -14,4 +14,8 @@
     <string name="empty_devices_bt_off">Bluetooth выключен. Включите его, чтобы увидеть спаренные устройства.</string>
     <string name="empty_devices">Нет спаренных устройств. Спарьте ПК в настройках Bluetooth.</string>
     <string name="trackpad_hint">Ведите пальцем — курсор, тап — клик.</string>
+    <string name="status_state">Состояние HID: %1$s</string>
+    <string name="status_peer">ПК: %1$s</string>
+    <string name="open_bt_settings">Настройки Bluetooth — сделать телефон видимым</string>
+    <string name="pair_hint">Спарьте со стороны ПК: Параметры → Bluetooth → Добавить устройство. Потом откройте трекпад.</string>
 </resources>

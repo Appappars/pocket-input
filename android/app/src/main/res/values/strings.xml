@@ -14,4 +14,8 @@
     <string name="empty_devices_bt_off">Bluetooth is off. Turn it on to see paired devices.</string>
     <string name="empty_devices">No paired devices. Pair the PC in Bluetooth settings.</string>
     <string name="trackpad_hint">Drag to move the cursor, tap to click.</string>
+    <string name="status_state">HID state: %1$s</string>
+    <string name="status_peer">PC: %1$s</string>
+    <string name="open_bt_settings">Bluetooth settings — make phone discoverable</string>
+    <string name="pair_hint">Pair from the PC: Settings → Bluetooth → Add device. Then open the trackpad.</string>
 </resources>
