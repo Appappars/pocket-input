@@ -13,7 +13,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -33,8 +32,6 @@ import dev.pocketinput.data.SettingsState
 import dev.pocketinput.hid.HidTransport
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 // Бит 1 = ЛКМ, бит 2 = ПКМ (HidTransport.pressButton/releaseButton).
@@ -59,9 +56,8 @@ private const val TWO_FINGER_ARM_MS = 40L
  * Используется и на экране трекпада, и на экране клавиатуры (место над системной клавиатурой).
  *
  * Жест «двойной тап + удержание» = перетаскивание (решение владельца продукта, 18.11.2026):
- * первый тап кликает, второй, если его держат дольше [TrackpadMath.TAP_AND_HOLD_MS], нажимает
- * ЛКМ и ведёт объект; отпускание пальца отпускает кнопку. Короткий второй тап остаётся
- * двойным кликом.
+ * первый тап кликает, второе касание сразу нажимает ЛКМ и ведёт объект, отпускание отпускает.
+ * Двойного клика нет: он разворачивал окно вместо перетаскивания.
  */
 @Composable
 fun TrackpadSurface(
@@ -75,8 +71,8 @@ fun TrackpadSurface(
     val density = LocalDensity.current.density
     val sensitivity = settings.sensitivity
     val scrollGain = settings.scrollGain
+    val invertScroll = settings.invertScroll
     val vibration = settings.vibration
-    val scope = rememberCoroutineScope()
 
     var lastTapUpMs by remember { mutableLongStateOf(0L) }
 
@@ -100,25 +96,22 @@ fun TrackpadSurface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(12.dp),
             )
-            .pointerInput(transport, density, sensitivity, scrollGain, vibration) {
+            .pointerInput(transport, density, sensitivity, scrollGain, invertScroll, vibration) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val downMs = down.uptimeMillis
 
-                    // ── Второй тап: короткий = двойной клик, с удержанием = перетаскивание.
+                    // ── Второе касание: удержание = перетаскивание, короткое = ничего.
                     if (TrackpadMath.isDoubleTap(lastTapUpMs, downMs, 0f)) {
                         lastTapUpMs = 0L
+                        // Двойного клика НЕТ (он разворачивал окно вместо перетаскивания):
+                        // второе касание либо сразу тянет объект, либо не делает ничего.
                         val whileHeld = withTimeoutOrNull(TrackpadMath.TAP_AND_HOLD_MS) {
                             awaitPointerEvent()
                         }
                         val stillDown = whileHeld?.changes?.any { it.pressed } ?: false
-                        if (!stillDown) {
-                            // Палец ушёл раньше 150 мс — это двойной клик.
-                            transport.tap(BUTTON_LEFT)
-                            vibrate(vibration, haptic)
-                        } else {
-                            // Держат — тянем объект: ЛКМ вниз, движение, отпускание на подъёме.
+                        if (stillDown) {
                             transport.pressButton(BUTTON_LEFT)
                             vibrate(vibration, haptic)
                             dragUntilRelease(transport, down.id, sensitivity)
@@ -226,7 +219,7 @@ fun TrackpadSurface(
                                 // Палец вверх = колесо вверх (положительные единицы HID).
                                 val step = TrackpadMath.accumulateScroll(
                                     wheelRemainder,
-                                    -dyDp * TrackpadMath.SCROLL_UNITS_PER_DP * scrollGain,
+                                    TrackpadMath.scrollUnits(dyDp, scrollGain, invertScroll),
                                 )
                                 wheelRemainder = step.remainder
                                 wheelPending += step.units

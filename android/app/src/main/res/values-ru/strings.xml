@@ -34,6 +34,7 @@
     <string name="settings_sensitivity">Чувствительность указателя</string>
     <string name="settings_scroll">Скорость скролла</string>
     <string name="settings_vibration">Вибро-отклик</string>
+    <string name="settings_invert_scroll">Инверсия скролла (наоборот)</string>
     <string name="settings_theme">Тема</string>
     <string name="settings_theme_system">Системная</string>
     <string name="settings_theme_dark">Тёмная</string>

@@ -15,6 +15,8 @@ data class SettingsState(
     val vibration: Boolean = true,
     val theme: String = THEME_SYSTEM,
     val layout: String = LAYOUT_EN,
+    /** Инверсия направления скролла; по умолчанию инвертирован (решение владельца продукта, 18.11). */
+    val invertScroll: Boolean = true,
 ) {
     companion object {
         const val SENSITIVITY_MIN = 0.2f
@@ -69,6 +71,7 @@ class SettingsStore(context: Context) {
         vibration = prefs.getBoolean(KEY_VIBRATION, SettingsState().vibration),
         theme = SettingsState.normalizeTheme(prefs.getString(KEY_THEME, null)),
         layout = SettingsState.normalizeLayout(prefs.getString(KEY_LAYOUT, null)),
+        invertScroll = prefs.getBoolean(KEY_INVERT_SCROLL, SettingsState().invertScroll),
     )
 
     /** Сохраняет настройки; значения клампятся, чтобы битое состояние не попало на диск. */
@@ -79,6 +82,7 @@ class SettingsStore(context: Context) {
             .putBoolean(KEY_VIBRATION, state.vibration)
             .putString(KEY_THEME, SettingsState.normalizeTheme(state.theme))
             .putString(KEY_LAYOUT, SettingsState.normalizeLayout(state.layout))
+            .putBoolean(KEY_INVERT_SCROLL, state.invertScroll)
             .apply()
     }
 
@@ -89,5 +93,6 @@ class SettingsStore(context: Context) {
         const val KEY_VIBRATION = "vibration"
         const val KEY_THEME = "theme"
         const val KEY_LAYOUT = "layout"
+        const val KEY_INVERT_SCROLL = "invert_scroll"
     }
 }

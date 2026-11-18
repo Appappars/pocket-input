@@ -34,7 +34,7 @@ object TrackpadMath {
      * Второй тап, который держат дольше этого времени, — не двойной клик, а начало
      * перетаскивания (как «tap twice and drag» на тачпаде ноутбука).
      */
-    const val TAP_AND_HOLD_MS = 150L
+    const val TAP_AND_HOLD_MS = 60L
 
     /** Порог свайпа тремя пальцами, dp. */
     const val THREE_FINGER_DP = 60f
@@ -66,6 +66,15 @@ object TrackpadMath {
         val total = remainder + unitsDelta
         val units = total.toInt()
         return ScrollStep(units, total - units)
+    }
+
+    /**
+     * Единицы колеса для вертикального движения двух пальцев.
+     * [invert] меняет направление (настройка «инверсия скролла», по умолчанию включена).
+     */
+    fun scrollUnits(dyDp: Float, gain: Float = 1f, invert: Boolean = false): Float {
+        val units = dyDp * SCROLL_UNITS_PER_DP * gain
+        return if (invert) units else -units
     }
 
     /**

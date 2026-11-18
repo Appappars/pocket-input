@@ -44,6 +44,19 @@ class TrackpadMathTest {
     }
 
     @Test
+    fun scrollUnits_directionAndInversion() {
+        // 20 dp -> 120 единиц (один щелчок колеса)
+        assertEquals(-120f, TrackpadMath.scrollUnits(20f), 1e-3f)
+        // инверсия меняет знак
+        assertEquals(120f, TrackpadMath.scrollUnits(20f, invert = true), 1e-3f)
+        // гейн масштабирует: 10 dp × 6 × 0.5 = 30 единиц
+        assertEquals(-30f, TrackpadMath.scrollUnits(10f, gain = 0.5f), 1e-3f)
+        // отрицательное движение: инверсия тоже даёт отрицательные единицы (движение вниз = колесо вниз)
+        assertEquals(-120f, TrackpadMath.scrollUnits(-20f, invert = true), 1e-3f)
+        assertEquals(120f, TrackpadMath.scrollUnits(-20f), 1e-3f)
+    }
+
+    @Test
     fun deltasSplitAt127_andSumIsPreserved() {
         val packets = TrackpadMath.splitDeltas(300f, 0f)
         assertEquals(listOf(127 to 0, 127 to 0, 46 to 0), packets)

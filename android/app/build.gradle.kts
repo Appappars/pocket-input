@@ -12,8 +12,8 @@ android {
         applicationId = "dev.pocketinput"
         minSdk = 28
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.2.3-tapdrag"
+        versionCode = 7
+        versionName = "0.2.4-drag-invert"
     }
 
     buildTypes {

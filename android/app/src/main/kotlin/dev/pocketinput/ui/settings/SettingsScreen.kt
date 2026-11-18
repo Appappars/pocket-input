@@ -117,6 +117,33 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
+                // Направление скролла: владелец просил инверсию (18.11), поэтому дефолт — включена.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = state.invertScroll,
+                            role = Role.Switch,
+                            onValueChange = { onChange(state.copy(invertScroll = it)) },
+                        )
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_invert_scroll),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Switch(
+                        checked = state.invertScroll,
+                        onCheckedChange = { onChange(state.copy(invertScroll = it)) },
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
 
                 Text(
