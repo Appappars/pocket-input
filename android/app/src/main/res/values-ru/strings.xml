@@ -15,7 +15,7 @@
     <string name="empty_devices">Нет спаренных устройств. Спарьте ПК в настройках Bluetooth.</string>
     <string name="trackpad_hint">Ведите пальцем — курсор, тап — клик.</string>
     <!-- фаза 1: жесты трекпада -->
-    <string name="trackpad_hint_full">Ведите — курсор. Тап — клик, двойной тап — двойной клик, удержание 0,5 с — правая кнопка. Двумя пальцами — скролл, тремя вверх — рабочий стол, тремя влево/вправо — переключение окон.</string>
+    <string name="trackpad_hint_full">Ведите — курсор. Тап — клик. Второе касание с удержанием — перетаскивание. Удержание 0,5 с — правая кнопка. Двумя пальцами — скролл, тремя вверх — рабочий стол, тремя влево/вправо — переключение окон.</string>
     <string name="btn_lmb">ЛКМ</string>
     <string name="btn_rmb">ПКМ</string>
     <string name="btn_lmb_latched">ЛКМ зафиксирована — ведите пальцем</string>
@@ -43,6 +43,33 @@
     <string name="kb_tap_to_open">Коснитесь поля, чтобы открыть клавиатуру телефона</string>
     <string name="kb_field_hint">Кириллица уйдёт в ПК как позиции клавиш: буквы появятся, если на ПК включена русская раскладка.</string>
     <string name="kb_unsupported">Пропущено символов: %1$d. Эмодзи и другие символы вне клавиатуры ПК в HID-режиме не передаются — нужен режим агента (фаза 2).</string>
+    <!-- индикатор связи и диагностика -->
+    <string name="link_connected">Подключено</string>
+    <string name="link_no_peer">Нет связи — ПК не подключён</string>
+    <string name="link_connecting">Подключаюсь…</string>
+    <string name="link_no_profile">Профиль HID недоступен</string>
+    <string name="link_failed">Регистрация HID не удалась</string>
+    <string name="link_no_adapter">Bluetooth недоступен</string>
+    <string name="quality_good">хорошо</string>
+    <string name="quality_medium">средне</string>
+    <string name="quality_poor">плохо</string>
+    <string name="diag_title">Качество связи</string>
+    <string name="diag_state_connected">Связь есть: ПК слушает этот телефон</string>
+    <string name="diag_state_registered">Связи нет: телефон зарегистрирован, но ПК не подключён</string>
+    <string name="diag_peer">ПК</string>
+    <string name="diag_quality">Качество канала</string>
+    <string name="diag_uptime">На связи, сек</string>
+    <string name="diag_p50">Задержка очереди p50</string>
+    <string name="diag_p95">Задержка очереди p95</string>
+    <string name="diag_sent">Отправлено отчётов</string>
+    <string name="diag_failed">Отказов sendReport</string>
+    <string name="diag_disconnects">Разрывов за сессию</string>
+    <string name="diag_note">Это не уровень сигнала: RSSI классического Bluetooth-HID Android приложению не отдаёт. Показатель считается по задержке очереди отправки, доле отказов sendReport и числу разрывов.</string>
+    <string name="diag_advice_poor">Канал перегружен: подойди ближе к ПК, убери препятствия, проверь, не занят ли Bluetooth наушниками или донглом.</string>
+    <string name="diag_test">Проверить канал</string>
+    <string name="diag_test_hint">HID не подтверждает доставку: тест ставит пустой отчёт в очередь, результат виден по счётчикам отправок и отказов.</string>
+    <string name="diag_test_sent">Пустой отчёт поставлен в очередь.</string>
+    <string name="diag_test_failed">Отправлять некуда: нет подключённого ПК или профиля HID.</string>
     <string name="back">Назад</string>
     <string name="status_state">Состояние HID: %1$s</string>
     <string name="status_peer">ПК: %1$s</string>

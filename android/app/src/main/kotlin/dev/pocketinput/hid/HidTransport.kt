@@ -24,12 +24,22 @@ import java.util.concurrent.Executors
  * коммит 135a3f7333553afe45467b04da514430c7383e0c (BluetoothHidManager.kt).
  *
  * Дескриптор и сборка репортов — Descriptors.kt.
+ *
+ * Метрики канала ([link]) — см. LinkSnapshot: состояние берётся из колбэков профиля, качество
+ * считается по задержке очереди отправки, доле отказов `sendReport` и числу разрывов.
+ * RSSI для классического HID публичным API Android недоступен, поэтому «силы сигнала» здесь нет.
  */
 @SuppressLint("MissingPermission")
 class HidTransport(private val context: Context) {
 
     companion object {
         private const val TAG = "PocketInputHID"
+
+        /** Сколько последних замеров задержки держим для p50/p95. */
+        private const val LATENCY_WINDOW = 64
+
+        /** Как часто публиковать снимок канала при потоке отправок. */
+        private const val PUBLISH_EVERY_SENDS = 8L
     }
 
     private val bluetoothManager =
@@ -48,8 +58,20 @@ class HidTransport(private val context: Context) {
     var peerName: String? by mutableStateOf(null)
         private set
 
+    /** Снимок канала для индикатора и экрана диагностики. */
+    var link: LinkSnapshot by mutableStateOf(LinkSnapshot())
+        private set
+
     /** Все sendReport/replyReport уходят отсюда, не из UI-потока. */
     private val sendExecutor = Executors.newSingleThreadExecutor()
+
+    // --- накопление метрик ---
+    private val latencyWindow = ArrayDeque<Float>(LATENCY_WINDOW)
+    private var sentOk = 0L
+    private var sendFailed = 0L
+    private var disconnectCount = 0
+    private var connectedSinceMs = 0L
+    private var lastDisconnectMs = 0L
 
     /**
      * Запрос прокси HID-профиля. getProfileProxy -> false/null — штатная
@@ -60,12 +82,14 @@ class HidTransport(private val context: Context) {
         if (adapter == null) {
             Log.w(TAG, "no bluetooth adapter")
             status = "no-adapter"
+            publishLink()
             return false
         }
         val ok = adapter.getProfileProxy(context, serviceListener, BluetoothProfile.HID_DEVICE)
         profileProxyObtained = ok
         status = if (ok) "proxy-requested" else "no-profile"
         Log.d(TAG, "getProfileProxy(HID_DEVICE) = $ok")
+        publishLink()
         return ok
     }
 
@@ -83,51 +107,87 @@ class HidTransport(private val context: Context) {
         status = "stopped"
         sendExecutor.shutdown()
         Log.d(TAG, "profile proxy closed")
+        publishLink()
     }
 
-    // --- Отправка репортов (на sendExecutor, не в UI-потоке) ---
+    // --- отправка с метриками ---
 
-    fun sendMouse(buttons: Int, dx: Int, dy: Int, wheel: Int) {
+    /**
+     * Ставит отправку в очередь и замеряет, сколько отчёт прождал в ней: на забитом канале
+     * Bluetooth-стек придерживает `sendReport`, и очередь растёт. Это и есть измеряемое
+     * «качество» вместо недоступного RSSI.
+     */
+    private fun submit(send: (BluetoothHidDevice, BluetoothDevice) -> Boolean) {
         val hid = hidDevice ?: return
         val dev = device ?: return
+        val enqueuedNs = System.nanoTime()
         sendExecutor.execute {
+            val waitedMs = (System.nanoTime() - enqueuedNs) / 1_000_000f
+            val ok = runCatching { send(hid, dev) }.getOrElse { false }
+            recordSend(waitedMs, ok)
+        }
+    }
+
+    private fun recordSend(waitedMs: Float, ok: Boolean) {
+        if (ok) sentOk++ else sendFailed++
+        if (latencyWindow.size >= LATENCY_WINDOW) latencyWindow.removeFirst()
+        latencyWindow.addLast(waitedMs)
+        val total = sentOk + sendFailed
+        if (total % PUBLISH_EVERY_SENDS == 0L) publishLink()
+    }
+
+    /**
+     * Ручная проверка канала: ставит в очередь пустой отчёт. Возвращает false, если отправлять
+     * некуда (нет профиля или ПК не подключён). Подтверждения от ПК HID не даёт — результат
+     * виден только в счётчиках отправок и отказов.
+     */
+    fun selfTest(): Boolean {
+        if (hidDevice == null || device == null) return false
+        submit { h, d ->
+            h.sendReport(d, Descriptors.MOUSE_REPORT_ID.toInt(), Descriptors.mouseReport(0, 0, 0, 0))
+        }
+        return true
+    }
+
+    fun sendMouse(buttons: Int, dx: Int, dy: Int, wheel: Int) {
+        submit { hid, dev ->
             val ok = hid.sendReport(
                 dev,
                 Descriptors.MOUSE_REPORT_ID.toInt(),
-                Descriptors.mouseReport(buttons, dx, dy, wheel)
+                Descriptors.mouseReport(buttons, dx, dy, wheel),
             )
             if (!ok) Log.w(TAG, "sendReport failed (mouse)")
+            ok
         }
     }
 
     /**
-     * Клик: нажатие → пауза → отпускание. Пауза на потоке отправки (не в UI), потому что
-     * Windows иногда склеивает фронт и спад, отправленные в одном кадре: одиночный отчёт
-     * «нажато-и-отпущено» тогда читается как отсутствие клика.
+     * Клик: нажатие → пауза → отпускание. Пауза исполняется в очереди отправки (не в UI),
+     * потому что Windows иногда склеивает фронт и спад, отправленные в одном кадре:
+     * одиночный отчёт «нажато-и-отпущено» тогда читается как отсутствие клика.
      */
     fun tap(button: Int = 1, holdMs: Long = 40) {
         Log.d(TAG, "tap requested: button=$button, hid=${hidDevice != null}, dev=${device != null}")
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
-            val down = hid.sendReport(
+        submit { hid, dev ->
+            hid.sendReport(
                 dev,
                 Descriptors.MOUSE_REPORT_ID.toInt(),
                 Descriptors.mouseReport(button, 0, 0, 0),
             )
-            try {
-                Thread.sleep(holdMs)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return@execute
+        }
+        submit { hid, dev ->
+            if (holdMs > 0) {
+                try {
+                    Thread.sleep(holdMs)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
-            val up = hid.sendReport(
+            hid.sendReport(
                 dev,
                 Descriptors.MOUSE_REPORT_ID.toInt(),
                 Descriptors.mouseReport(0, 0, 0, 0),
             )
-            Log.d(TAG, "tap report: down=$down up=$up")
-            if (!down || !up) Log.w(TAG, "sendReport failed (tap)")
         }
     }
 
@@ -140,26 +200,22 @@ class HidTransport(private val context: Context) {
 
     /** Отправить отчёт с текущей маской кнопок (движение при зажатой кнопке). */
     fun sendMotion(dx: Int, dy: Int) {
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
-            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
-                    Descriptors.mouseReport(buttonsMask, dx, dy, 0))) {
-                Log.w(TAG, "sendReport failed (motion)")
-            }
+        submit { hid, dev ->
+            val ok = hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                Descriptors.mouseReport(buttonsMask, dx, dy, 0))
+            if (!ok) Log.w(TAG, "sendReport failed (motion)")
+            ok
         }
     }
 
     /** Новое состояние маски кнопок одним отчётом. */
     fun setButtons(mask: Int, wheel: Int = 0) {
         buttonsMask = mask and 0x1F
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
-            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
-                    Descriptors.mouseReport(buttonsMask, 0, 0, wheel))) {
-                Log.w(TAG, "sendReport failed (buttons)")
-            }
+        submit { hid, dev ->
+            val ok = hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                Descriptors.mouseReport(buttonsMask, 0, 0, wheel))
+            if (!ok) Log.w(TAG, "sendReport failed (buttons)")
+            ok
         }
     }
 
@@ -177,31 +233,30 @@ class HidTransport(private val context: Context) {
 
     /** Вертикальный скролл: единица — 1/120 щелчка колеса, знак = направление. */
     fun wheel(units: Int) {
-        val hid = hidDevice ?: return
-        val dev = device ?: return
         val clamped = units.coerceIn(-127, 127)
         if (clamped == 0) return
-        sendExecutor.execute {
-            if (!hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
-                    Descriptors.mouseReport(buttonsMask, 0, 0, clamped))) {
-                Log.w(TAG, "sendReport failed (wheel)")
-            }
+        submit { hid, dev ->
+            val ok = hid.sendReport(dev, Descriptors.MOUSE_REPORT_ID.toInt(),
+                Descriptors.mouseReport(buttonsMask, 0, 0, clamped))
+            if (!ok) Log.w(TAG, "sendReport failed (wheel)")
+            ok
         }
     }
 
     /** Нажатие клавиши с модификаторами: down + пауза + up (без автоповтора). */
     fun keyTap(usage: Int, mods: Int = 0, holdMs: Long = 20) {
         Log.d(TAG, "keyTap usage=0x${usage.toString(16)} mods=0x${mods.toString(16)}")
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
+        submit { hid, dev ->
             hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
                 Descriptors.keyboardReport(mods, usage))
-            try {
-                Thread.sleep(holdMs)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return@execute
+        }
+        submit { hid, dev ->
+            if (holdMs > 0) {
+                try {
+                    Thread.sleep(holdMs)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
             }
             hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
                 Descriptors.keyboardReport(mods))
@@ -210,34 +265,66 @@ class HidTransport(private val context: Context) {
 
     /** Клавиша вниз без отпускания: автоповтор делает ОС ПК, не телефон. */
     fun keyDown(usage: Int, mods: Int = 0) {
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
+        submit { hid, dev ->
             hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
                 Descriptors.keyboardReport(mods, usage))
         }
     }
 
     fun keyUp(mods: Int = 0) {
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
+        submit { hid, dev ->
             hid.sendReport(dev, Descriptors.KEYBOARD_REPORT_ID.toInt(),
                 Descriptors.keyboardReport(mods))
         }
     }
 
     fun sendKeyboard(modifier: Int, vararg keys: Int) {
-        val hid = hidDevice ?: return
-        val dev = device ?: return
-        sendExecutor.execute {
+        submit { hid, dev ->
             val ok = hid.sendReport(
                 dev,
                 Descriptors.KEYBOARD_REPORT_ID.toInt(),
-                Descriptors.keyboardReport(modifier, *keys)
+                Descriptors.keyboardReport(modifier, *keys),
             )
             if (!ok) Log.w(TAG, "sendReport failed (keyboard)")
+            ok
         }
+    }
+
+    // --- снимок канала ---
+
+    private fun publishLink() {
+        val samples = latencyWindow.toList()
+        val p50 = if (samples.isEmpty()) 0f else samples.sorted()[samples.size / 2]
+        val total = sentOk + sendFailed
+        val failedRatio = if (total == 0L) 0f else sendFailed.toFloat() / total
+        val state = when {
+            bluetoothAdapter == null -> LinkState.NO_ADAPTER
+            status == "no-adapter" -> LinkState.NO_ADAPTER
+            status == "no-profile" -> LinkState.NO_PROFILE
+            status == "register-failed" -> LinkState.FAILED
+            device != null && status == "connected" -> LinkState.CONNECTED
+            status == "idle" || status == "proxy-requested" -> LinkState.INIT
+            else -> LinkState.REGISTERED
+        }
+        // Балл имеет смысл только когда канал есть и были отправки.
+        val score = if (state == LinkState.CONNECTED && total > 0L) {
+            LinkQuality.score(p50, failedRatio, disconnectCount)
+        } else {
+            -1
+        }
+        link = LinkSnapshot(
+            state = state,
+            peer = peerName,
+            quality = LinkQuality.level(score),
+            score = score,
+            p50Ms = p50,
+            p95Ms = LinkQuality.percentile95(samples),
+            sentOk = sentOk,
+            sendFailed = sendFailed,
+            disconnects = disconnectCount,
+            connectedSinceMs = connectedSinceMs,
+            lastDisconnectMs = lastDisconnectMs,
+        )
     }
 
     // --- Profile proxy ---
@@ -253,7 +340,9 @@ class HidTransport(private val context: Context) {
             Log.d(TAG, "HID profile proxy disconnected")
             hidDevice = null
             device = null
+            peerName = null
             status = "proxy-lost"
+            publishLink()
         }
     }
 
@@ -275,6 +364,7 @@ class HidTransport(private val context: Context) {
         val result = hid.registerApp(sdp, null, qos, sendExecutor, hidCallback)
         Log.d(TAG, "registerApp result: $result")
         if (result != true) status = "register-failed"
+        publishLink()
     }
 
     // --- BluetoothHidDevice.Callback (сигнатуры по эталону ghostboard) ---
@@ -287,6 +377,7 @@ class HidTransport(private val context: Context) {
                 peerName = pluggedDevice.name ?: pluggedDevice.address
             }
             status = if (registered) "registered" else "unregistered"
+            publishLink()
         }
 
         override fun onConnectionStateChanged(dev: BluetoothDevice, state: Int) {
@@ -296,13 +387,22 @@ class HidTransport(private val context: Context) {
                     device = dev
                     peerName = dev.name ?: dev.address
                     status = "connected"
+                    connectedSinceMs = System.currentTimeMillis()
+                    // Задержки прошлого соединения не смешиваем с новым каналом.
+                    latencyWindow.clear()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     if (device == dev) device = null
                     peerName = null
                     status = "registered"
+                    if (connectedSinceMs > 0L) {
+                        disconnectCount++
+                        lastDisconnectMs = System.currentTimeMillis()
+                    }
+                    connectedSinceMs = 0L
                 }
             }
+            publishLink()
         }
 
         override fun onGetReport(dev: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {

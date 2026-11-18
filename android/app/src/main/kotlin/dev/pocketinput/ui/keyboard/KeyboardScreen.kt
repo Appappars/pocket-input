@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import dev.pocketinput.R
 import dev.pocketinput.data.SettingsState
 import dev.pocketinput.hid.HidTransport
+import dev.pocketinput.ui.link.LinkStatusBar
 import dev.pocketinput.ui.trackpad.TrackpadSurface
 
 /** Невидимый символ-заполнитель: держит в поле запас, чтобы удаление всегда меняло текст. */
@@ -67,6 +68,7 @@ fun KeyboardScreen(
     settings: SettingsState,
     onLayoutChange: (String) -> Unit,
     onBack: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     val filler = remember { FILLER_CHAR.toString().repeat(FILLER_COUNT) }
     // Курсор держим В КОНЦЕ поля: иначе «стереть» в IME удаляет перед курсором,
@@ -155,6 +157,7 @@ fun KeyboardScreen(
                 text = stringResource(R.string.keyboard_title),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
             )
             TextButton(
                 onClick = { focus.requestFocus(); ime?.show() },
@@ -163,6 +166,12 @@ fun KeyboardScreen(
                 Text("⌨", style = MaterialTheme.typography.titleMedium)
             }
         }
+
+        LinkStatusBar(
+            link = transport.link,
+            onClick = onOpenDiagnostics,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
 
         // Свободное место над системной клавиатурой работает тачпадом: переключаться не нужно.
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {

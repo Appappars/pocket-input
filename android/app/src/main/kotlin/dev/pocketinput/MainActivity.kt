@@ -21,6 +21,7 @@ import dev.pocketinput.hid.HidTransport
 import dev.pocketinput.service.PocketInputService
 import dev.pocketinput.ui.connect.ConnectScreen
 import dev.pocketinput.ui.keyboard.KeyboardScreen
+import dev.pocketinput.ui.link.DiagnosticsScreen
 import dev.pocketinput.ui.settings.SettingsScreen
 import dev.pocketinput.ui.theme.PocketInputTheme
 import dev.pocketinput.ui.trackpad.TrackpadScreen
@@ -35,7 +36,7 @@ import dev.pocketinput.ui.trackpad.TrackpadScreen
  */
 class MainActivity : ComponentActivity() {
 
-    private enum class Screen { CONNECT, TRACKPAD, KEYBOARD, SETTINGS }
+    private enum class Screen { CONNECT, TRACKPAD, KEYBOARD, SETTINGS, DIAGNOSTICS }
 
     private lateinit var transport: HidTransport
     private lateinit var store: SettingsStore
@@ -75,7 +76,11 @@ class MainActivity : ComponentActivity() {
             }
 
             // Системная «назад» на вложенных экранах возвращает на трекпад, а не закрывает приложение.
-            BackHandler(enabled = screen == Screen.KEYBOARD || screen == Screen.SETTINGS) {
+            BackHandler(
+                enabled = screen == Screen.KEYBOARD ||
+                    screen == Screen.SETTINGS ||
+                    screen == Screen.DIAGNOSTICS,
+            ) {
                 goTo(Screen.TRACKPAD)
             }
 
@@ -95,6 +100,7 @@ class MainActivity : ComponentActivity() {
                             settings = settings,
                             onOpenKeyboard = { goTo(Screen.KEYBOARD) },
                             onOpenSettings = { goTo(Screen.SETTINGS) },
+                            onOpenDiagnostics = { goTo(Screen.DIAGNOSTICS) },
                         )
 
                         Screen.KEYBOARD -> KeyboardScreen(
@@ -103,6 +109,12 @@ class MainActivity : ComponentActivity() {
                             onLayoutChange = { layout ->
                                 apply(settings.copy(layout = layout))
                             },
+                            onBack = { goTo(Screen.TRACKPAD) },
+                            onOpenDiagnostics = { goTo(Screen.DIAGNOSTICS) },
+                        )
+
+                        Screen.DIAGNOSTICS -> DiagnosticsScreen(
+                            transport = transport,
                             onBack = { goTo(Screen.TRACKPAD) },
                         )
 

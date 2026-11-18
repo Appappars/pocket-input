@@ -15,7 +15,7 @@
     <string name="empty_devices">No paired devices. Pair the PC in Bluetooth settings.</string>
     <string name="trackpad_hint">Drag to move the cursor, tap to click.</string>
     <!-- phase 1: trackpad gestures -->
-    <string name="trackpad_hint_full">Drag to move. Tap to click, double tap to double click, hold 0.5 s for right click. Two fingers scroll, three fingers up shows the desktop, three fingers left/right switch windows.</string>
+    <string name="trackpad_hint_full">Drag to move. Tap to click. Tap again and hold to drag. Hold 0.5 s for right click. Two fingers scroll, three fingers up shows the desktop, three fingers left/right switch windows.</string>
     <string name="btn_lmb">LMB</string>
     <string name="btn_rmb">RMB</string>
     <string name="btn_lmb_latched">LMB latched — drag your finger</string>
@@ -43,6 +43,33 @@
     <string name="kb_tap_to_open">Tap the field to open the phone keyboard</string>
     <string name="kb_field_hint">Cyrillic goes to the PC as key positions: letters appear if the PC has a Russian layout.</string>
     <string name="kb_unsupported">Skipped characters: %1$d. Emoji and other symbols outside the PC keyboard cannot be sent in HID mode — agent mode is required (phase 2).</string>
+    <!-- link indicator and diagnostics -->
+    <string name="link_connected">Connected</string>
+    <string name="link_no_peer">No link — PC is not connected</string>
+    <string name="link_connecting">Connecting…</string>
+    <string name="link_no_profile">HID profile unavailable</string>
+    <string name="link_failed">HID registration failed</string>
+    <string name="link_no_adapter">Bluetooth unavailable</string>
+    <string name="quality_good">good</string>
+    <string name="quality_medium">medium</string>
+    <string name="quality_poor">poor</string>
+    <string name="diag_title">Link quality</string>
+    <string name="diag_state_connected">Link is up: the PC listens to this phone</string>
+    <string name="diag_state_registered">No link: the phone is registered but the PC is not connected</string>
+    <string name="diag_peer">PC</string>
+    <string name="diag_quality">Channel quality</string>
+    <string name="diag_uptime">Connected, s</string>
+    <string name="diag_p50">Queue delay p50</string>
+    <string name="diag_p95">Queue delay p95</string>
+    <string name="diag_sent">Reports sent</string>
+    <string name="diag_failed">sendReport failures</string>
+    <string name="diag_disconnects">Disconnects this session</string>
+    <string name="diag_note">This is not signal strength: Android does not expose RSSI for classic Bluetooth HID to apps. The score is computed from send-queue delay, sendReport failure ratio and the number of disconnects.</string>
+    <string name="diag_advice_poor">The channel is congested: move closer to the PC, remove obstacles, check that Bluetooth headphones or a dongle are not saturating it.</string>
+    <string name="diag_test">Test the channel</string>
+    <string name="diag_test_hint">HID does not confirm delivery: the test queues an empty report, the result shows up in the sent/failed counters.</string>
+    <string name="diag_test_sent">Empty report queued.</string>
+    <string name="diag_test_failed">Nowhere to send: no connected PC or no HID profile.</string>
     <string name="back">Back</string>
     <string name="status_state">HID state: %1$s</string>
     <string name="status_peer">PC: %1$s</string>

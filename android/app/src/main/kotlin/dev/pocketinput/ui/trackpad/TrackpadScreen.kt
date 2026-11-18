@@ -29,6 +29,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import dev.pocketinput.R
 import dev.pocketinput.data.SettingsState
 import dev.pocketinput.hid.HidTransport
+import dev.pocketinput.ui.link.LinkStatusBar
 
 // Бит 1 = ЛКМ, бит 2 = ПКМ (HidTransport.pressButton/releaseButton).
 private const val BUTTON_LEFT = 1
@@ -44,6 +45,7 @@ fun TrackpadScreen(
     settings: SettingsState,
     onOpenKeyboard: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     var lmbLatched by rememberSaveable { mutableStateOf(false) }
@@ -63,8 +65,11 @@ fun TrackpadScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        // Индикатор канала: тап открывает диагностику.
+        LinkStatusBar(link = transport.link, onClick = onOpenDiagnostics)
         Text(
             text = stringResource(R.string.trackpad_title),
+            modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
