@@ -1,8 +1,12 @@
 package dev.pocketinput.ui.keyboard
 
+import android.view.inputmethod.InputMethodManager
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -11,10 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,25 +35,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import dev.pocketinput.R
@@ -55,12 +57,6 @@ import dev.pocketinput.hid.HidTransport
 import dev.pocketinput.hid.LinkState
 import dev.pocketinput.ui.link.LinkStatusBar
 import dev.pocketinput.ui.trackpad.TrackpadSurface
-
-private enum class InputStatus(val label: Int) {
-    QUEUED(R.string.kb_input_queued),
-    QUEUE_REJECTED(R.string.kb_input_queue_rejected),
-    SEND_FAILED(R.string.kb_input_send_failed),
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -89,41 +85,26 @@ fun KeyboardScreen(
     val editRevision = link.keyboardRevision
     var revision by remember(transport, sessionId, editRevision) { mutableIntStateOf(0) }
     val editorRevision = revision
-
     var field by remember(transport, sessionId, editRevision, editorRevision) {
         mutableStateOf(TextFieldValue())
     }
-    var committedField by remember(transport, sessionId, editRevision, editorRevision) {
-        mutableStateOf(TextFieldValue())
-    }
-    var queuedText by remember(transport, sessionId, editRevision, editorRevision) {
-        mutableStateOf("")
-    }
+    var queuedText by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf("") }
     var russianLayout by remember(transport, sessionId) {
         mutableStateOf(settings.layout.equals("ru", ignoreCase = true))
     }
     var skipped by remember(transport, sessionId, editRevision) { mutableIntStateOf(0) }
-    var inputStatus by remember(transport, sessionId, editRevision) {
-        mutableStateOf<InputStatus?>(null)
-    }
+    var queueRejected by remember(transport, sessionId, editRevision) { mutableStateOf(false) }
+    var layoutMenu by remember(transport, sessionId) { mutableStateOf(false) }
+    var symbolMenu by remember(transport, sessionId) { mutableStateOf(false) }
 
+    val context = LocalContext.current
     val focus = remember { FocusRequester() }
     val ime = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
     var requestInitialKeyboard by remember(transport, sessionId) { mutableStateOf(editorActive) }
 
-    fun showKeyboard() {
-        focus.requestFocus()
-        ime?.show()
-    }
-
-    LaunchedEffect(transport, sessionId, editRevision, editorRevision) {
-        if (!editorActive) {
-            ime?.hide()
-        } else if (requestInitialKeyboard || imeVisible) {
-            requestInitialKeyboard = false
-            showKeyboard()
-        }
+    LaunchedEffect(editorActive) {
+        if (!editorActive) ime?.hide()
     }
 
     DisposableEffect(transport, sessionId) {
@@ -132,143 +113,230 @@ fun KeyboardScreen(
         }
     }
 
-    fun handleChange(value: TextFieldValue) {
+    fun isCurrentEditor(): Boolean {
         val current = transport.link
-        if (!editorActive || !resumed || current.state != LinkState.CONNECTED || current.sessionId != sessionId ||
-            current.keyboardRevision != editRevision || revision != editorRevision
-        ) {
-            return
-        }
-        val edit = planKeyboardEdit(queuedText, value.text, value.composition != null, russianLayout)
-        if (edit == null) {
+        return editorActive && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            current.state == LinkState.CONNECTED && current.sessionId == sessionId &&
+            current.keyboardRevision == editRevision && revision == editorRevision
+    }
+
+    fun submitKeys(keys: List<Pair<Int, Int>>): Boolean {
+        if (!isCurrentEditor()) return false
+        val accepted = transport.keyTaps(keys, sessionId, editRevision)
+        queueRejected = !accepted
+        return accepted
+    }
+
+    fun handleChange(value: TextFieldValue) {
+        if (!isCurrentEditor()) return
+        if (value.text == field.text) {
             field = value
             return
         }
-        if (edit.keys.isNotEmpty()) {
-            if (!transport.keyTaps(edit.keys, sessionId, editRevision)) {
-                field = committedField
-                inputStatus = InputStatus.QUEUE_REJECTED
-                return
-            }
-            inputStatus = InputStatus.QUEUED
-            if (edit.russianLayout != russianLayout) {
-                russianLayout = edit.russianLayout
-                onLayoutChange(if (russianLayout) "ru" else "en")
-            }
-        }
+        val edit = planKeyboardEdit(queuedText, value.text, russianLayout)
+        if (edit.keys.isNotEmpty() && !submitKeys(edit.keys)) return
+        queueRejected = false
         skipped = edit.skippedCharacters
         queuedText = edit.queuedText
-        committedField = TextFieldValue(edit.localText, selection = TextRange(edit.localText.length))
-        field = committedField
+        field = value.withEditableTail(edit)
     }
 
-    fun invalidateTail() {
+    fun resetEditor() {
         if (revision != editorRevision) return
-        if (field.text.isEmpty() && field.composition == null && committedField.text.isEmpty()) return
         skipped = 0
         revision++
     }
 
-    fun deleteOnPc() {
-        if (!editorActive || !resumed) return
-        val accepted = transport.keyTaps(listOf(Usages.BACKSPACE to 0), sessionId, editRevision)
-        if (accepted) invalidateTail()
-        inputStatus = if (accepted) InputStatus.QUEUED else InputStatus.QUEUE_REJECTED
+    fun selectLayout(russian: Boolean) {
+        if (!isCurrentEditor() || russianLayout == russian) return
+        resetEditor()
+        russianLayout = russian
+        onLayoutChange(if (russian) "ru" else "en")
     }
 
-    Column(
+    fun insertSymbol(symbol: Char) {
+        val range = field.selection
+        val cursor = range.min + 1
+        handleChange(TextFieldValue(
+            text = field.text.replaceRange(range.min, range.max, symbol.toString()),
+            selection = TextRange(cursor),
+        ))
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = onBack,
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
-            }
-            Text(
-                text = stringResource(R.string.keyboard_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            )
-        }
+        val compact = editorActive && maxHeight < 220.dp
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (!compact) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = onBack,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
+                    }
+                    Text(
+                        text = stringResource(R.string.keyboard_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    )
+                }
 
-        LinkStatusBar(
-            link = link,
-            onClick = {
-                if (transport.link.state == LinkState.CONNECTED) onOpenDiagnostics() else onOpenConnection()
-            },
-            modifier = Modifier.padding(bottom = 6.dp),
-        )
-        Text(
-            text = stringResource(if (connected) R.string.kb_windows_layout else R.string.kb_connection_hint),
-            style = MaterialTheme.typography.labelSmall,
-        )
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            TrackpadSurface(
-                transport = transport,
-                settings = settings,
-                modifier = Modifier.fillMaxSize(),
-                onFocusChangingInput = ::invalidateTail,
-            )
+                LinkStatusBar(
+                    link = link,
+                    onClick = {
+                        if (transport.link.state == LinkState.CONNECTED) onOpenDiagnostics() else onOpenConnection()
+                    },
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+
             if (editorActive) {
                 key(transport, sessionId, editRevision, editorRevision) {
-                    BasicTextField(
+                    OutlinedTextField(
                         value = field,
                         onValueChange = ::handleChange,
-                        modifier = Modifier
-                            .size(1.dp)
-                            .alpha(0.01f)
-                            .focusRequester(focus)
-                            .clearAndSetSemantics {},
-                        textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
-                        cursorBrush = SolidColor(Color.Transparent),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).focusRequester(focus),
+                        label = { Text(stringResource(R.string.kb_editor)) },
+                        maxLines = if (compact) 1 else 2,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.None,
                             autoCorrectEnabled = false,
                             imeAction = ImeAction.None,
                         ),
                     )
+                    LaunchedEffect(Unit) {
+                        if (requestInitialKeyboard || imeVisible) {
+                            requestInitialKeyboard = false
+                            focus.requestFocus()
+                            ime?.show()
+                        }
+                    }
                 }
+            } else if (!connected) {
+                Text(stringResource(R.string.kb_connection_hint), style = MaterialTheme.typography.labelSmall)
             }
-        }
 
-        if (editorActive) {
-            val failureStatus = InputStatus.SEND_FAILED.takeIf { link.keyboardFailureRevision == editRevision }
-            (inputStatus ?: failureStatus)?.let { status ->
-                Text(
-                    text = stringResource(status.label),
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = if (status == InputStatus.QUEUED) Modifier else Modifier.semantics {
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                    color = if (status == InputStatus.QUEUED) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                )
-            }
-            if (skipped > 0) {
-                Text(
-                    text = stringResource(R.string.kb_input_skipped),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
-            Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = ::showKeyboard, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.kb_show_keyboard))
+            TrackpadSurface(
+                transport = transport,
+                settings = settings,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                onFocusChangingInput = {
+                    if (field.text.isNotEmpty() || field.composition != null) resetEditor()
+                },
+            )
+
+            if (editorActive) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = { layoutMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.kb_pc_layout, if (russianLayout) "RU" else "EN"))
+                        }
+                        DropdownMenu(expanded = layoutMenu, onDismissRequest = { layoutMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.kb_switch_windows_layout)) },
+                                onClick = {
+                                    layoutMenu = false
+                                    if (submitKeys(listOf(Usages.SPACE to CharMap.LGUI))) selectLayout(!russianLayout)
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.kb_windows_now_en)) },
+                                onClick = {
+                                    layoutMenu = false
+                                    selectLayout(false)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.kb_windows_now_ru)) },
+                                onClick = {
+                                    layoutMenu = false
+                                    selectLayout(true)
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.kb_android_keyboard)) },
+                                onClick = {
+                                    layoutMenu = false
+                                    context.getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
+                                },
+                            )
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = { symbolMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.kb_symbols))
+                        }
+                        DropdownMenu(expanded = symbolMenu, onDismissRequest = { symbolMenu = false }) {
+                            FlowRow(
+                                modifier = Modifier.width(256.dp).padding(horizontal = 8.dp),
+                                maxItemsInEachRow = 5,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                for (symbol in CharMap.symbols(russianLayout)) {
+                                    TextButton(
+                                        modifier = Modifier.width(48.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                        onClick = {
+                                            symbolMenu = false
+                                            insertSymbol(symbol)
+                                        },
+                                    ) {
+                                        Text(symbol.toString())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            if (submitKeys(listOf(Usages.BACKSPACE to 0))) resetEditor()
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                    ) {
+                        Text(stringResource(R.string.kb_delete_on_pc))
+                    }
                 }
-                TextButton(onClick = ::deleteOnPc, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.kb_delete_on_pc))
+
+                val status = when {
+                    queueRejected -> R.string.kb_input_queue_rejected
+                    link.keyboardFailureRevision == editRevision -> R.string.kb_input_send_failed
+                    skipped > 0 -> R.string.kb_input_skipped
+                    else -> null
+                }
+                if (status != null) {
+                    Text(
+                        stringResource(status),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
                 }
             }
         }
     }
+}
+
+internal fun TextFieldValue.withEditableTail(edit: KeyboardEdit): TextFieldValue {
+    if (edit.droppedPrefix == 0) return this
+
+    fun TextRange.inTail(): TextRange {
+        val start = (start - edit.droppedPrefix).coerceIn(0, edit.localText.length)
+        val end = (end - edit.droppedPrefix).coerceIn(0, edit.localText.length)
+        return TextRange(start, end)
+    }
+
+    return TextFieldValue(
+        text = edit.localText,
+        selection = selection.inTail(),
+        composition = composition?.inTail()?.takeUnless { it.collapsed },
+    )
 }

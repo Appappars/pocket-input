@@ -58,7 +58,14 @@
     <string name="kb_input_queued">Ввод поставлен в очередь.</string>
     <string name="kb_input_queue_rejected">Ввод не добавлен в очередь. Попробуйте набрать меньший фрагмент.</string>
     <string name="kb_input_send_failed">Ошибка отправки ввода. Проверьте текст на ПК.</string>
-    <string name="kb_input_skipped">Неподдерживаемые символы пропущены.</string>
+    <string name="kb_input_skipped">Часть символов пропущена. Сверьте раскладку Windows.</string>
+    <string name="kb_editor">Текст для ПК</string>
+    <string name="kb_pc_layout">ПК · %1$s</string>
+    <string name="kb_switch_windows_layout">Переключить на ПК (Win+Пробел)</string>
+    <string name="kb_windows_now_en">На ПК сейчас EN (US)</string>
+    <string name="kb_windows_now_ru">На ПК сейчас RU (ЙЦУКЕН)</string>
+    <string name="kb_android_keyboard">Клавиатура Android…</string>
+    <string name="kb_symbols">Знаки</string>
     <string name="back">Назад</string>
     <string name="status_state">Состояние HID: %1$s</string>
     <string name="status_peer">ПК: %1$s</string>

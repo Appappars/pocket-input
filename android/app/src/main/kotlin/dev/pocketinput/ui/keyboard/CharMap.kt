@@ -1,13 +1,6 @@
 package dev.pocketinput.ui.keyboard
 
-/**
- * Преобразование символа в HID usage-код + модификаторы.
- *
- * Зачем: с 0.2.1 текст набирается системной клавиатурой телефона (пользовательский выбор),
- * а на ПК уходит позиция клавиши. Для латиницы это прямая раскладка US, для кириллицы —
- * позиции клавиш стандартной русской раскладки Windows (ЙЦУКЕН на физической US-клавиатуре):
- * так русские буквы появятся на ПК, если там включена русская раскладка, и латинские — если нет.
- */
+/** HID-позиции для стандартных раскладок Windows US и ЙЦУКЕН. */
 object CharMap {
 
     // Маски модификаторов HID (Usage Page 0x07, modifier byte).
@@ -48,32 +41,30 @@ object CharMap {
         'ь' to 0x10, 'б' to 0x36, 'ю' to 0x37, 'ё' to 0x35,
     )
 
-    /**
-     * Знаки, которые в русской раскладке Windows стоят на других клавишах.
-     * Без этой таблицы запятая уходила как US-позиция и на русской раскладке ПК
-     * превращалась в «б» (находка владельца продукта, 18.11).
-     */
-    private val ruOverrides: Map<Char, Pair<Int, Int>> = mapOf(
-        ',' to (0x38 to LSHIFT),   // Shift + «/» = запятая
-        '.' to (0x38 to 0),        // «/» = точка
-        '/' to (0x31 to LSHIFT),   // Shift + «\» = косая черта
-        '\\' to (0x31 to 0),      // «\» = обратная косая
+    private val russianSymbols: Map<Char, Pair<Int, Int>> = mapOf(
+        '!' to (0x1E to LSHIFT), '"' to (0x1F to LSHIFT), '№' to (0x20 to LSHIFT),
+        ';' to (0x21 to LSHIFT), '%' to (0x22 to LSHIFT), ':' to (0x23 to LSHIFT),
+        '?' to (0x24 to LSHIFT), '*' to (0x25 to LSHIFT), '(' to (0x26 to LSHIFT),
+        ')' to (0x27 to LSHIFT), '_' to (0x2D to LSHIFT), '+' to (0x2E to LSHIFT),
+        ',' to (0x38 to LSHIFT), '.' to (0x38 to 0),
+        '/' to (0x31 to LSHIFT), '\\' to (0x31 to 0),
     )
 
-    /** Результат: usage-код и дополнительные модификаторы (0, если не нужны). */
+    private const val SYMBOLS = "?!:;.,@#№\$%&*+-=()_\"'/\\[]{}<>^~|\u0060"
+
     fun map(ch: Char, ruLayout: Boolean = false): Pair<Int, Int>? {
-        if (ruLayout) ruOverrides[ch]?.let { return it }
-        latin[ch]?.let { return it to 0 }
-        shifted[ch]?.let { return it to LSHIFT }
-        cyrillic[ch]?.let { return it to 0 }
-        val lower = ch.lowercaseChar()
-        if (lower != ch) {
-            if (latin.containsKey(lower)) return latin.getValue(lower) to LSHIFT
-            if (cyrillic.containsKey(lower)) return cyrillic.getValue(lower) to LSHIFT
+        if (ruLayout) {
+            return russianSymbols[ch] ?: when (ch) {
+                in '0'..'9', ' ', '-', '=' -> latin.getValue(ch) to 0
+                in 'А'..'Я', 'Ё' -> cyrillic.getValue(ch.lowercaseChar()) to LSHIFT
+                else -> cyrillic[ch]?.let { it to 0 }
+            }
         }
-        return null // эмодзи, иероглифы и прочее в HID-ветке не выражаются (фаза 2: агент)
+        return latin[ch]?.let { it to 0 }
+            ?: shifted[ch]?.let { it to LSHIFT }
+            ?: if (ch in 'A'..'Z') latin.getValue(ch.lowercaseChar()) to LSHIFT else null
     }
 
-    /** Сколько символов строки вообще выразимы в HID-ветке (для предупреждения в UI). */
-    fun unsupportedCount(text: String): Int = text.count { map(it) == null }
+    fun symbols(ruLayout: Boolean): List<Char> =
+        SYMBOLS.filter { map(it, ruLayout) != null }.toList()
 }

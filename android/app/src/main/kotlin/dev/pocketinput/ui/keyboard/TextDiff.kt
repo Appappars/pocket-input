@@ -2,19 +2,25 @@ package dev.pocketinput.ui.keyboard
 
 import dev.pocketinput.hid.KEYBOARD_QUEUE_CAPACITY
 
-// Полная замена хвоста требует до двух операций на один сохранённый символ.
+// Для замены нужны максимум две операции на единицу хранимого текста.
 internal const val MAX_EDITABLE_TAIL = KEYBOARD_QUEUE_CAPACITY / 2
 
 internal object TextDiff {
+    data class Result(val deleted: Int, val inserted: String, val retainedSuffix: Int = 0)
 
-    data class Result(val deleted: Int, val inserted: String)
-
-    // HID Backspace работает у курсора в конце. Даже общий суффикс нужно набрать заново.
     fun diff(old: String, new: String): Result {
         var prefix = 0
         val maxPrefix = minOf(old.length, new.length)
         while (prefix < maxPrefix && old[prefix] == new[prefix]) prefix++
-        return Result(old.length - prefix, new.substring(prefix))
+
+        var suffix = 0
+        // Enter может сменить фокус ПК. Стрелки допустимы только внутри одного поля.
+        if ('\n' !in new) {
+            while (suffix < maxPrefix - prefix && old[old.lastIndex - suffix] == new[new.lastIndex - suffix]) {
+                suffix++
+            }
+        }
+        return Result(old.length - prefix - suffix, new.substring(prefix, new.length - suffix), suffix)
     }
 }
 
@@ -23,48 +29,42 @@ internal data class KeyboardEdit(
     val queuedText: String,
     val keys: List<Pair<Int, Int>>,
     val skippedCharacters: Int,
-    val russianLayout: Boolean,
+    val droppedPrefix: Int,
 )
 
 internal fun planKeyboardEdit(
     previouslyQueuedText: String,
     nextText: String,
-    composing: Boolean,
     russianLayout: Boolean,
-): KeyboardEdit? {
-    if (composing) return null
-
-    val supportedText = hidText(nextText)
+): KeyboardEdit {
+    val supportedText = hidText(nextText, russianLayout)
     val diff = TextDiff.diff(previouslyQueuedText, supportedText)
-    var useRussianLayout = russianLayout
+    // Курсор ПК остаётся в конце фрагмента между правками.
     val keys = buildList {
+        repeat(diff.retainedSuffix) { add(Usages.ARROW_LEFT to 0) }
         repeat(diff.deleted) { add(Usages.BACKSPACE to 0) }
         for (char in diff.inserted) {
-            val key = if (char == '\n') Usages.ENTER to 0 else checkNotNull(CharMap.map(char, useRussianLayout))
-            add(key)
-            when (char.lowercaseChar()) {
-                in 'а'..'я', 'ё' -> useRussianLayout = true
-                in 'a'..'z' -> useRussianLayout = false
-            }
+            add(if (char == '\n') Usages.ENTER to 0 else checkNotNull(CharMap.map(char, russianLayout)))
         }
+        repeat(diff.retainedSuffix) { add(Usages.ARROW_RIGHT to 0) }
     }
-    // Enter может перенести фокус Windows. Доступна правка только текста после Enter.
-    val line = nextText.substringAfterLast('\n')
-    val localText = line.takeLast(MAX_EDITABLE_TAIL).let { tail ->
-        if (line.length > tail.length && tail.first().isLowSurrogate()) tail.drop(1) else tail
+    val lineStart = nextText.lastIndexOf('\n') + 1
+    var tailStart = maxOf(lineStart, nextText.length - MAX_EDITABLE_TAIL)
+    if (tailStart > lineStart && nextText[tailStart].isLowSurrogate()) {
+        tailStart++
     }
-    val queuedText = if (localText == nextText) supportedText else hidText(localText)
+    val localText = nextText.substring(tailStart)
     return KeyboardEdit(
         localText = localText,
-        queuedText = queuedText,
+        queuedText = if (tailStart == 0) supportedText else hidText(localText, russianLayout),
         keys = keys,
         skippedCharacters = nextText.codePointCount(0, nextText.length) - supportedText.length,
-        russianLayout = useRussianLayout,
+        droppedPrefix = tailStart,
     )
 }
 
-private fun hidText(text: String): String = buildString {
+private fun hidText(text: String, russianLayout: Boolean): String = buildString {
     for (char in text) {
-        if (char == '\n' || CharMap.map(char) != null) append(char)
+        if (char == '\n' || CharMap.map(char, russianLayout) != null) append(char)
     }
 }

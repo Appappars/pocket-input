@@ -58,7 +58,14 @@
     <string name="kb_input_queued">Input queued for sending.</string>
     <string name="kb_input_queue_rejected">Input could not be queued. Try again with a shorter fragment.</string>
     <string name="kb_input_send_failed">Some input could not be sent. Check the text on your PC.</string>
-    <string name="kb_input_skipped">Unsupported characters were skipped.</string>
+    <string name="kb_input_skipped">Some characters were skipped. Check the Windows layout.</string>
+    <string name="kb_editor">Text for PC</string>
+    <string name="kb_pc_layout">PC · %1$s</string>
+    <string name="kb_switch_windows_layout">Switch on PC (Win+Space)</string>
+    <string name="kb_windows_now_en">Windows is on EN (US)</string>
+    <string name="kb_windows_now_ru">Windows is on RU</string>
+    <string name="kb_android_keyboard">Android keyboard…</string>
+    <string name="kb_symbols">Symbols</string>
     <string name="back">Back</string>
     <string name="status_state">HID state: %1$s</string>
     <string name="status_peer">PC: %1$s</string>
