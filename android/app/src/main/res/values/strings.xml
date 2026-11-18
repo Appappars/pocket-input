@@ -15,8 +15,7 @@
     <string name="empty_devices">No paired devices. Pair the PC in Bluetooth settings.</string>
     <string name="trackpad_hint">Drag to move the cursor, tap to click.</string>
     <!-- phase 1: trackpad gestures -->
-    <string name="trackpad_hint_full">Slide to move the cursor. Tap to click, or hold to right-click. Scroll with two fingers. Swipe up with three fingers for the desktop or sideways to switch windows.</string>
-    <string name="trackpad_hint_tap_drag">Tap and hold a second touch nearby to drag. Scroll with two fingers. Swipe up with three fingers for the desktop or sideways to switch windows.</string>
+    <string name="trackpad_hint_full">Tap to click. Hold briefly, then slide to drag. Hold still longer and release for a right-click. Scroll with two fingers. Swipe up with three fingers for the desktop or sideways to switch windows.</string>
     <string name="btn_lmb">Hold left button</string>
     <string name="btn_rmb">RMB</string>
     <string name="btn_lmb_latched">Release left button</string>
@@ -36,11 +35,8 @@
     <string name="settings_scroll">Scroll speed</string>
     <string name="settings_vibration">Haptics</string>
     <string name="settings_gestures">Gestures</string>
-    <string name="settings_tap_drag">Tap and hold to drag</string>
-    <string name="settings_tap_drag_hint">Adds a delay to a single click. To drag, tap again nearby and hold.</string>
-    <string name="settings_double_tap_window">Second tap window</string>
-    <string name="settings_tap_hold">Drag start (hold)</string>
-    <string name="settings_long_press">Right click (hold)</string>
+    <string name="settings_tap_hold">Hold before dragging</string>
+    <string name="settings_long_press">Hold before a right-click</string>
     <string name="settings_tap_slop">Tap threshold</string>
     <string name="settings_invert_scroll">Invert scroll</string>
     <string name="settings_theme">Theme</string>

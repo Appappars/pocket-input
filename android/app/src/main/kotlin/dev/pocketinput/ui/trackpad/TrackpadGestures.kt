@@ -24,16 +24,15 @@ internal class TrackpadGestures(
     private val isLeftLatched: () -> Boolean = { false },
     private val emit: (TrackpadAction) -> Unit,
 ) {
-    private enum class Mode { IDLE, TAP, SECOND_TAP, POINTER, DRAG, SCROLL, SWIPE, WAIT_FOR_UP }
-    private data class PendingTap(val upMs: Long, val position: TrackpadPoint)
+    private enum class Mode { IDLE, TAP, POINTER, DRAG, SCROLL, SWIPE, WAIT_FOR_UP }
 
     private val motionScale = density * settings.sensitivity
     private var mode = Mode.IDLE
     private var fingerIds = emptySet<Long>()
     private var start = TrackpadPoint(0f, 0f)
     private var previous = start
-    private var pendingTap: PendingTap? = null
-    private var holdAtMs = Long.MAX_VALUE
+    private var downAtMs = 0L
+    private var movedBeforeHold = false
 
     private var motionX = 0f
     private var motionY = 0f
@@ -45,19 +44,13 @@ internal class TrackpadGestures(
 
     val nextDeadlineMs: Long?
         get() {
-            val gestureDeadline = when (mode) {
-                Mode.IDLE -> pendingTap?.let { it.upMs + settings.doubleTapWindowMs }
-                Mode.TAP, Mode.SECOND_TAP -> holdAtMs
-                else -> null
-            }
             val motionDeadline = if (hasMotion()) motionAtMs else Long.MAX_VALUE
             val wheelDeadline = if (abs(wheelPending + scrollInGesture) >= 1f) {
                 wheelAtMs
             } else {
                 Long.MAX_VALUE
             }
-            return minOf(gestureDeadline ?: Long.MAX_VALUE, motionDeadline, wheelDeadline)
-                .takeUnless { it == Long.MAX_VALUE }
+            return minOf(motionDeadline, wheelDeadline).takeUnless { it == Long.MAX_VALUE }
         }
 
     fun onFrame(nowMs: Long, contacts: List<TrackpadContact>) {
@@ -67,10 +60,7 @@ internal class TrackpadGestures(
             Mode.IDLE -> when (active.size) {
                 0 -> Unit
                 1 -> startSingle(active.single(), nowMs)
-                else -> {
-                    sendPendingClick(nowMs)
-                    startMulti(active)
-                }
+                else -> startMulti(active)
             }
             Mode.WAIT_FOR_UP -> if (active.isEmpty()) mode = Mode.IDLE
             Mode.SCROLL -> updateScroll(active)
@@ -81,14 +71,6 @@ internal class TrackpadGestures(
     }
 
     fun advance(nowMs: Long) {
-        suspendTapRecognitionWhileLatched()
-        if (mode == Mode.IDLE) {
-            val tap = pendingTap
-            if (tap != null && nowMs >= tap.upMs + settings.doubleTapWindowMs) {
-                sendPendingClick(nowMs)
-            }
-        }
-        completeHold(nowMs)
         flushMotion(nowMs)
         flushWheel(nowMs)
     }
@@ -96,7 +78,6 @@ internal class TrackpadGestures(
     fun cancel() {
         if (dragging()) emit(TrackpadAction.Button.CANCEL_DRAG)
         mode = Mode.IDLE
-        pendingTap = null
         motionX = 0f
         motionY = 0f
         scrollInGesture = 0f
@@ -106,30 +87,16 @@ internal class TrackpadGestures(
     }
 
     private fun startSingle(contact: TrackpadContact, nowMs: Long) {
-        val tap = pendingTap
-        val secondTap = tap != null && TrackpadMath.isDoubleTap(
-            tap.upMs,
-            nowMs,
-            distance(tap.position, contact.position),
-            windowMs = settings.doubleTapWindowMs.toLong(),
-            thresholdDp = settings.tapSlopDp,
-        )
-        if (!secondTap) sendPendingClick(nowMs)
-        mode = when {
-            isLeftLatched() -> Mode.POINTER
-            secondTap -> Mode.SECOND_TAP
-            else -> Mode.TAP
-        }
-        holdAtMs = nowMs + if (secondTap) settings.tapAndHoldMs else settings.longPressMs
+        mode = if (isLeftLatched()) Mode.POINTER else Mode.TAP
+        downAtMs = nowMs
+        movedBeforeHold = false
         fingerIds = setOf(contact.id)
         start = contact.position
         previous = start
     }
 
     private fun suspendTapRecognitionWhileLatched() {
-        if (!isLeftLatched()) return
-        pendingTap = null
-        if (mode == Mode.TAP || mode == Mode.SECOND_TAP) {
+        if (mode == Mode.TAP && isLeftLatched()) {
             mode = Mode.POINTER
             previous = start
         }
@@ -142,7 +109,6 @@ internal class TrackpadGestures(
     ) {
         val finger = contacts.firstOrNull { it.id in fingerIds }
         if (active.size > 1) {
-            sendPendingClick(nowMs)
             if (dragging()) {
                 cancel()
                 mode = Mode.WAIT_FOR_UP
@@ -159,13 +125,17 @@ internal class TrackpadGestures(
         }
 
         val position = finger.position
-        if (
-            (mode == Mode.TAP || mode == Mode.SECOND_TAP) &&
-            !TrackpadMath.isTap(distance(start, position), settings.tapSlopDp)
-        ) {
-            sendPendingClick(nowMs)
-            mode = Mode.POINTER
-            previous = start
+        val heldMs = nowMs - downAtMs
+        if (mode == Mode.TAP) {
+            val shiftDp = distance(start, position)
+            val heldLongEnough = heldMs >= settings.tapAndHoldMs
+            // Ранний сдвиг отменяет захват, сохраняя допустимое дрожание обычного тапа.
+            if (!heldLongEnough && shiftDp >= settings.tapSlopDp / 2f) movedBeforeHold = true
+            if (!TrackpadMath.isTap(shiftDp, settings.tapSlopDp)) {
+                mode = if (finger.pressed && heldLongEnough && !movedBeforeHold) Mode.DRAG else Mode.POINTER
+                previous = start
+                if (mode == Mode.DRAG) sendButton(TrackpadAction.Button.HOLD_LEFT, nowMs)
+            }
         }
         if (mode == Mode.POINTER || mode == Mode.DRAG) {
             motionX += (position.x - previous.x) * motionScale
@@ -174,37 +144,25 @@ internal class TrackpadGestures(
         previous = position
         if (finger.pressed) return
 
-        completeHold(nowMs)
         when (mode) {
-            Mode.TAP -> if (settings.tapDragEnabled) {
-                pendingTap = PendingTap(nowMs, position)
-            } else {
-                sendButton(TrackpadAction.Button.LEFT_CLICK, nowMs)
-            }
-            Mode.SECOND_TAP -> {
-                sendPendingClick(nowMs)
-                sendButton(TrackpadAction.Button.LEFT_CLICK, nowMs)
+            Mode.TAP -> {
+                val rightClick = TrackpadMath.isLongPress(
+                    heldMs,
+                    distance(start, position),
+                    holdThresholdMs = settings.longPressMs.toLong(),
+                    thresholdDp = settings.tapSlopDp,
+                )
+                val click = if (rightClick) {
+                    TrackpadAction.Button.RIGHT_CLICK
+                } else {
+                    TrackpadAction.Button.LEFT_CLICK
+                }
+                sendButton(click, nowMs)
             }
             Mode.DRAG -> sendButton(TrackpadAction.Button.RELEASE_LEFT, nowMs)
             else -> Unit
         }
         mode = Mode.IDLE
-    }
-
-    private fun completeHold(nowMs: Long) {
-        if (nowMs < holdAtMs) return
-        when (mode) {
-            Mode.TAP -> {
-                sendButton(TrackpadAction.Button.RIGHT_CLICK, nowMs)
-                mode = Mode.WAIT_FOR_UP
-            }
-            Mode.SECOND_TAP -> {
-                pendingTap = null
-                sendButton(TrackpadAction.Button.HOLD_LEFT, nowMs)
-                mode = Mode.DRAG
-            }
-            else -> Unit
-        }
     }
 
     private fun startMulti(active: List<TrackpadContact>) {
@@ -249,12 +207,6 @@ internal class TrackpadGestures(
             if (direction != TrackpadMath.ThreeFinger.NONE) emit(TrackpadAction.Swipe(direction))
         }
         mode = if (active.isEmpty()) Mode.IDLE else Mode.WAIT_FOR_UP
-    }
-
-    private fun sendPendingClick(nowMs: Long) {
-        if (pendingTap == null) return
-        pendingTap = null
-        sendButton(TrackpadAction.Button.LEFT_CLICK, nowMs)
     }
 
     private fun sendButton(action: TrackpadAction.Button, nowMs: Long) {

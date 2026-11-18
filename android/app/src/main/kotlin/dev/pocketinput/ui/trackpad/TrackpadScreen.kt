@@ -98,10 +98,7 @@ fun TrackpadScreen(
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            text = stringResource(
-                if (settings.tapDragEnabled) R.string.trackpad_hint_tap_drag
-                else R.string.trackpad_hint_full,
-            ),
+            text = stringResource(R.string.trackpad_hint_full),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),

@@ -15,8 +15,7 @@
     <string name="empty_devices">Нет спаренных устройств. Спарьте ПК в настройках Bluetooth.</string>
     <string name="trackpad_hint">Ведите пальцем — курсор, тап — клик.</string>
     <!-- фаза 1: жесты трекпада -->
-    <string name="trackpad_hint_full">Ведите пальцем для движения курсора. Коснитесь для клика или удерживайте для ПКМ. Прокрутка двумя пальцами. Свайп тремя вверх открывает рабочий стол, в стороны переключает окна.</string>
-    <string name="trackpad_hint_tap_drag">Коснитесь дважды рядом и удерживайте второе касание, чтобы перетащить. Прокрутка двумя пальцами. Свайп тремя вверх открывает рабочий стол, в стороны переключает окна.</string>
+    <string name="trackpad_hint_full">Тапните для клика. Для захвата придержите палец и потяните. Долгое удержание без сдвига даёт ПКМ при отпускании. Прокрутка двумя пальцами. Свайп тремя вверх открывает рабочий стол, в стороны переключает окна.</string>
     <string name="btn_lmb">Зажать ЛКМ</string>
     <string name="btn_rmb">ПКМ</string>
     <string name="btn_lmb_latched">Отпустить ЛКМ</string>
@@ -36,11 +35,8 @@
     <string name="settings_scroll">Скорость скролла</string>
     <string name="settings_vibration">Вибро-отклик</string>
     <string name="settings_gestures">Жесты</string>
-    <string name="settings_tap_drag">Тап и удержание для перетаскивания</string>
-    <string name="settings_tap_drag_hint">Одиночный клик отправляется с задержкой. Для перетаскивания коснитесь рядом и удерживайте второе касание.</string>
-    <string name="settings_double_tap_window">Окно второго касания</string>
-    <string name="settings_tap_hold">Начало перетаскивания (удержание)</string>
-    <string name="settings_long_press">Правая кнопка (удержание)</string>
+    <string name="settings_tap_hold">Удержание перед перетаскиванием</string>
+    <string name="settings_long_press">Удержание перед правым кликом</string>
     <string name="settings_tap_slop">Порог тапа</string>
     <string name="settings_invert_scroll">Инверсия скролла (наоборот)</string>
     <string name="settings_theme">Тема</string>
