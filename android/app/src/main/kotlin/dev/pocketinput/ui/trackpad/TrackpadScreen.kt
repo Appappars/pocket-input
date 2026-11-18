@@ -1,7 +1,8 @@
 package dev.pocketinput.ui.trackpad
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,7 +11,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -45,40 +48,50 @@ fun TrackpadScreen(transport: HidTransport, sensitivity: Float = 1.0f) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .pointerInput(transport, sensitivity, pxPerDp) {
-                    var lastReportNs = 0L
-                    var totalShiftDp = 0f
-                    detectDragGestures(
-                        onDragStart = { totalShiftDp = 0f },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            // dragAmount в px; переводим в dp по densityDpi/160
-                            val dxDp = dragAmount.x / pxPerDp
-                            val dyDp = dragAmount.y / pxPerDp
-                            totalShiftDp += sqrt(dxDp * dxDp + dyDp * dyDp).toFloat()
-                            // порог drag: >= 8 dp
-                            if (!TrackpadMath.isTap(totalShiftDp)) {
-                                // троттлинг: не чаще 120 Гц
-                                val now = System.nanoTime()
-                                if (TrackpadMath.shouldSend(now, lastReportNs)) {
-                                    lastReportNs = now
-                                    sendClamped(
-                                        transport,
-                                        dxPx = dxDp * pxPerDp,
-                                        dyPx = dyDp * pxPerDp
-                                    )
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        val pointerId = down.id
+                                        var totalShiftDp = 0f
+                                        var lastReportNs = 0L
+                                        var dragging = false
+
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                            if (change.changedToUpIgnoreConsumed()) {
+                                                change.consume()
+                                                break
+                                            }
+                                            val delta = change.positionChange()
+                                            change.consume()
+                                            if (delta.x == 0f && delta.y == 0f) continue
+
+                                            val dxDp = delta.x / pxPerDp
+                                            val dyDp = delta.y / pxPerDp
+                                            totalShiftDp += sqrt(dxDp * dxDp + dyDp * dyDp).toFloat()
+                                            // Как только сдвиг перевалил порог тапа — жест считается drag до конца.
+                                            if (!dragging && !TrackpadMath.isTap(totalShiftDp)) dragging = true
+
+                                            if (dragging) {
+                                                // троттлинг: не чаще 120 Гц
+                                                val now = System.nanoTime()
+                                                if (TrackpadMath.shouldSend(now, lastReportNs)) {
+                                                    lastReportNs = now
+                                                    sendClamped(
+                                                        transport,
+                                                        dxPx = dxDp * pxPerDp,
+                                                        dyPx = dyDp * pxPerDp
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Палец ушёл, не сдвинувшись дальше порога — это тап (левый клик).
+                                        if (!dragging && TrackpadMath.isTap(totalShiftDp)) {
+                                            transport.tap(BUTTON_LEFT)
+                                        }
+                                    }
                                 }
-                            }
-                        },
-                        onDragEnd = {
-                            // порог тапа: суммарный сдвиг < 8 dp
-                            if (TrackpadMath.isTap(totalShiftDp)) {
-                                transport.sendMouse(BUTTON_LEFT, 0, 0, 0)
-                                transport.sendMouse(0, 0, 0, 0)
-                            }
-                        },
-                        onDragCancel = { }
-                    )
-                }
         )
         // TODO(phase 1): скролл двумя пальцами (wheel) — в фазе 0 не реализуется,
         // см. spec/05-roadmap-qa.md фаза 1.

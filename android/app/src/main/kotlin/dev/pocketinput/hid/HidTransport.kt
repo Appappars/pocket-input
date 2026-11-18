@@ -100,6 +100,37 @@ class HidTransport(private val context: Context) {
         }
     }
 
+    /**
+     * Клик: нажатие → пауза → отпускание. Пауза на потоке отправки (не в UI), потому что
+     * Windows иногда склеивает фронт и спад, отправленные в одном кадре: одиночный отчёт
+     * «нажато-и-отпущено» тогда читается как отсутствие клика.
+     */
+    fun tap(button: Int = 1, holdMs: Long = 40) {
+        Log.d(TAG, "tap requested: button=$button, hid=${hidDevice != null}, dev=${device != null}")
+        val hid = hidDevice ?: return
+        val dev = device ?: return
+        sendExecutor.execute {
+            val down = hid.sendReport(
+                dev,
+                Descriptors.MOUSE_REPORT_ID.toInt(),
+                Descriptors.mouseReport(button, 0, 0, 0),
+            )
+            try {
+                Thread.sleep(holdMs)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@execute
+            }
+            val up = hid.sendReport(
+                dev,
+                Descriptors.MOUSE_REPORT_ID.toInt(),
+                Descriptors.mouseReport(0, 0, 0, 0),
+            )
+            Log.d(TAG, "tap report: down=$down up=$up")
+            if (!down || !up) Log.w(TAG, "sendReport failed (tap)")
+        }
+    }
+
     fun sendKeyboard(modifier: Int, vararg keys: Int) {
         val hid = hidDevice ?: return
         val dev = device ?: return
