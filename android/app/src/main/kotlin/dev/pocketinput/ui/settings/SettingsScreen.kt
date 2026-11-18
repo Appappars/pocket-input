@@ -99,27 +99,53 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(8.dp))
 
-                // Пороги жестов: те же числа, что использует TrackpadSurface.
-                SettingIntSlider(
-                    label = stringResource(R.string.settings_double_tap_window),
-                    value = state.doubleTapWindowMs,
-                    range = SettingsState.DOUBLE_TAP_MIN_MS..SettingsState.DOUBLE_TAP_MAX_MS,
-                    step = 50,
-                    unit = "ms",
-                    onValueChange = {
-                        onChange(state.copy(doubleTapWindowMs = SettingsState.clampDoubleTapWindow(it)))
-                    },
-                )
-                SettingIntSlider(
-                    label = stringResource(R.string.settings_tap_hold),
-                    value = state.tapAndHoldMs,
-                    range = SettingsState.TAP_HOLD_MIN_MS..SettingsState.TAP_HOLD_MAX_MS,
-                    step = 20,
-                    unit = "ms",
-                    onValueChange = {
-                        onChange(state.copy(tapAndHoldMs = SettingsState.clampTapAndHold(it)))
-                    },
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = state.tapDragEnabled,
+                            role = Role.Switch,
+                            onValueChange = { onChange(state.copy(tapDragEnabled = it)) },
+                        )
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_tap_drag),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_tap_drag_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = state.tapDragEnabled, onCheckedChange = null)
+                }
+                if (state.tapDragEnabled) {
+                    SettingIntSlider(
+                        label = stringResource(R.string.settings_double_tap_window),
+                        value = state.doubleTapWindowMs,
+                        range = SettingsState.DOUBLE_TAP_MIN_MS..SettingsState.DOUBLE_TAP_MAX_MS,
+                        step = 50,
+                        unit = "ms",
+                        onValueChange = {
+                            onChange(state.copy(doubleTapWindowMs = SettingsState.clampDoubleTapWindow(it)))
+                        },
+                    )
+                    SettingIntSlider(
+                        label = stringResource(R.string.settings_tap_hold),
+                        value = state.tapAndHoldMs,
+                        range = SettingsState.TAP_HOLD_MIN_MS..SettingsState.TAP_HOLD_MAX_MS,
+                        step = 10,
+                        unit = "ms",
+                        onValueChange = {
+                            onChange(state.copy(tapAndHoldMs = SettingsState.clampTapAndHold(it)))
+                        },
+                    )
+                }
                 SettingIntSlider(
                     label = stringResource(R.string.settings_long_press),
                     value = state.longPressMs,
@@ -287,9 +313,9 @@ private fun SettingIntSlider(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            Text(text = label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Text(
                 text = "$value $unit",
                 style = MaterialTheme.typography.titleSmall,

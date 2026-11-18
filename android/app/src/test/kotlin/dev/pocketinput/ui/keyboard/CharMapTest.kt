@@ -1,5 +1,6 @@
 package dev.pocketinput.ui.keyboard
 
+import dev.pocketinput.hid.KEYBOARD_QUEUE_CAPACITY
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -114,19 +115,122 @@ class TextDiffTest {
     }
 
     @Test
-    fun replaceSelection() {
-        // «hel» заменили на «Х»: удалить 1, вставить 1
-        assertEquals(TextDiff.Result(2, "X"), TextDiff.diff("hello", "hXlo"))
+    fun replaceSelection_rewritesFromFirstDifference() {
+        assertEquals(TextDiff.Result(2, "xc"), TextDiff.diff("abc", "axc"))
     }
 
     @Test
-    fun insertInMiddle() {
-        assertEquals(TextDiff.Result(0, "XY"), TextDiff.diff("ab", "aXYb"))
+    fun insertInMiddle_recreatesUnchangedSuffixAtHostCaret() {
+        assertEquals(TextDiff.Result(1, "XYb"), TextDiff.diff("ab", "aXYb"))
     }
 
     @Test
     fun cyrillicIsCountedAsSingleChars() {
         assertEquals(TextDiff.Result(0, "привет"), TextDiff.diff("", "привет"))
         assertEquals(TextDiff.Result(1, ""), TextDiff.diff("привет", "приве"))
+    }
+}
+
+class KeyboardEditTest {
+
+    @Test
+    fun deletingSkippedEmoji_doesNotDeleteSentText() {
+        val insertion = checkNotNull(planKeyboardEdit("a", "a🙂", composing = false, russianLayout = false))
+        assertEquals("a", insertion.queuedText)
+        assertEquals(1, insertion.skippedCharacters)
+        assertEquals(emptyList<Pair<Int, Int>>(), insertion.keys)
+
+        val deletion = checkNotNull(planKeyboardEdit(insertion.queuedText, "a", composing = false, russianLayout = false))
+        assertEquals(0, deletion.skippedCharacters)
+        assertEquals(emptyList<Pair<Int, Int>>(), deletion.keys)
+    }
+
+    @Test
+    fun deletingUnsupportedTextInMiddle_preservesTheWholeSentSuffix() {
+        val initial = checkNotNull(planKeyboardEdit("", "a漢b", composing = false, russianLayout = false))
+        assertEquals("ab", initial.queuedText)
+        assertEquals(listOf(0x04 to 0, 0x05 to 0), initial.keys)
+
+        val corrected = checkNotNull(planKeyboardEdit(initial.queuedText, "ab", composing = false, russianLayout = false))
+        assertEquals(emptyList<Pair<Int, Int>>(), corrected.keys)
+    }
+
+    @Test
+    fun composingWord_waitsForCommitBeforeSendingKeys() {
+        assertNull(planKeyboardEdit("a", "ab", composing = true, russianLayout = false))
+        assertNull(planKeyboardEdit("a", "abc", composing = true, russianLayout = false))
+        val committed = checkNotNull(planKeyboardEdit("a", "abc", composing = false, russianLayout = false))
+        assertEquals(listOf(0x05 to 0, 0x06 to 0), committed.keys)
+
+        val selectionOnly = checkNotNull(planKeyboardEdit(committed.queuedText, "abc", composing = false, russianLayout = false))
+        assertEquals(emptyList<Pair<Int, Int>>(), selectionOnly.keys)
+    }
+
+    @Test
+    fun cancellingComposition_doesNotSendDeletes() {
+        assertNull(planKeyboardEdit("a", "aя", composing = true, russianLayout = false))
+        val cancelled = checkNotNull(planKeyboardEdit("a", "a", composing = false, russianLayout = false))
+        assertEquals(emptyList<Pair<Int, Int>>(), cancelled.keys)
+    }
+
+    @Test
+    fun replacingMiddle_deletesAndReplaysSuffixInOrder() {
+        val edit = checkNotNull(planKeyboardEdit("abc", "axc", composing = false, russianLayout = false))
+        assertEquals("axc", edit.queuedText)
+        assertEquals(listOf(Usages.BACKSPACE to 0, Usages.BACKSPACE to 0, 0x1B to 0, 0x06 to 0), edit.keys)
+    }
+
+    @Test
+    fun russianContext_mapsPunctuationAndKeepsEnter() {
+        val edit = checkNotNull(planKeyboardEdit("", "ф,\n", composing = false, russianLayout = false))
+        assertEquals(listOf(0x04 to 0, 0x38 to CharMap.LSHIFT, Usages.ENTER to 0), edit.keys)
+        assertEquals(true, edit.russianLayout)
+    }
+
+    @Test
+    fun enterForgetsPreviousFieldSoImeBackspaceCannotDeleteIt() {
+        val enter = checkNotNull(planKeyboardEdit("abc", "abc\n", composing = false, russianLayout = false))
+        assertEquals(listOf(Usages.ENTER to 0), enter.keys)
+        assertEquals("", enter.localText)
+        assertEquals("", enter.queuedText)
+
+        val deletion = checkNotNull(planKeyboardEdit(enter.queuedText, "", composing = false, russianLayout = false))
+        assertEquals(emptyList<Pair<Int, Int>>(), deletion.keys)
+    }
+
+    @Test
+    fun multilinePastePreservesOnlyLastEditableLineIncludingSkippedCharacters() {
+        val paste = checkNotNull(planKeyboardEdit("", "a\nb\n🙂c", composing = false, russianLayout = false))
+        assertEquals(listOf(0x04 to 0, Usages.ENTER to 0, 0x05 to 0, Usages.ENTER to 0, 0x06 to 0), paste.keys)
+        assertEquals("🙂c", paste.localText)
+        assertEquals("c", paste.queuedText)
+
+        val deletion = checkNotNull(planKeyboardEdit(paste.queuedText, "🙂", composing = false, russianLayout = false))
+        assertEquals(listOf(Usages.BACKSPACE to 0), deletion.keys)
+    }
+
+    @Test
+    fun entireEditableTailCanBeReplacedWithinQueueCapacity() {
+        val longText = "a".repeat(KEYBOARD_QUEUE_CAPACITY)
+        val paste = checkNotNull(planKeyboardEdit("", longText, composing = false, russianLayout = false))
+        val retained = "a".repeat(MAX_EDITABLE_TAIL)
+        assertEquals(KEYBOARD_QUEUE_CAPACITY, paste.keys.size)
+        assertEquals(retained, paste.localText)
+        assertEquals(retained, paste.queuedText)
+
+        val replacement = "b".repeat(MAX_EDITABLE_TAIL)
+        val edit = checkNotNull(planKeyboardEdit(paste.queuedText, replacement, composing = false, russianLayout = false))
+        assertEquals(KEYBOARD_QUEUE_CAPACITY, edit.keys.size)
+        assertEquals(List(MAX_EDITABLE_TAIL) { Usages.BACKSPACE to 0 }, edit.keys.take(MAX_EDITABLE_TAIL))
+        assertEquals(replacement, edit.queuedText)
+    }
+
+    @Test
+    fun trimmingEditableTailDoesNotSplitSurrogatePair() {
+        val suffix = "b".repeat(MAX_EDITABLE_TAIL - 1)
+        val edit = checkNotNull(planKeyboardEdit("", "a🙂$suffix", composing = false, russianLayout = false))
+        assertEquals(suffix, edit.localText)
+        assertEquals(suffix, edit.queuedText)
+        assertEquals(1, edit.skippedCharacters)
     }
 }

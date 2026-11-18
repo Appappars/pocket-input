@@ -1,204 +1,119 @@
 package dev.pocketinput.ui.connect
 
-import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.content.Intent
-import android.os.Build
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.ui.platform.LocalContext
 import dev.pocketinput.R
-import dev.pocketinput.hid.HidTransport
-import kotlinx.coroutines.delay
+import dev.pocketinput.hid.LinkSnapshot
+import dev.pocketinput.hid.LinkState
+import dev.pocketinput.ui.link.label
 
-/**
- * Фаза 0, spec/05-roadmap-qa.md 5.3 п.5: список спаренных устройств,
- * кнопка «Подключить», текст ошибки при null-профиле HID.
- */
-@Suppress("MissingPermission") // BLUETOOTH_CONNECT запрашивается ниже до чтения bondedDevices
 @Composable
-fun ConnectScreen(transport: HidTransport, onConnected: () -> Unit) {
-    val errorNoHid = stringResource(R.string.error_no_hid)
-    val connectLabel = stringResource(R.string.connect_button)
-
-    var devices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
-    var selected by remember { mutableStateOf<BluetoothDevice?>(null) }
-    // Профиль HID выдаётся асинхронно (getProfileProxy), поэтому статус перечитываем.
-    var hidAvailable by remember { mutableStateOf(transport.isHidSupported()) }
-    var btEnabled by remember {
-        mutableStateOf(BluetoothAdapter.getDefaultAdapter()?.isEnabled == true)
+fun ConnectScreen(
+    link: LinkSnapshot,
+    permissionSettingsRequired: Boolean,
+    onRequestPermission: () -> Unit,
+    onOpenBluetoothSettings: () -> Unit,
+    onRetry: () -> Unit,
+    onConnected: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    onStopSession: (() -> Unit)? = null,
+) {
+    LaunchedEffect(link.sessionId) {
+        if (link.isConnected) onConnected()
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        if (grants.values.all { it }) {
-            devices = readBondedDevices()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))
-        } else {
-            devices = readBondedDevices()
-        }
-        // ждём колбэк профиля: на части прошивок он приходит через 200-800 мс
-        repeat(6) {
-            delay(300)
-            hidAvailable = transport.isHidSupported()
-            btEnabled = BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
-            if (devices.isEmpty()) devices = readBondedDevices()
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text(
-            text = stringResource(R.string.connect_title),
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Spacer(Modifier.height(12.dp))
-
-        Surface(
-            tonalElevation = 2.dp,
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(stringResource(R.string.connect_title), style = MaterialTheme.typography.headlineSmall)
+        Column(
+            modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = stringResource(
-                        if (hidAvailable) R.string.status_hid_ok else R.string.status_hid_none
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (hidAvailable) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                )
-                Text(
-                    text = stringResource(
-                        if (btEnabled) R.string.status_bt_on else R.string.status_bt_off
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                // Фаза 0: состояние registerApp/connected видно без logcat.
-                Text(
-                    text = stringResource(R.string.status_state, transport.status),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                transport.peerName?.let { peer ->
-                    Text(
-                        text = stringResource(R.string.status_peer, peer),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+            Text(stringResource(link.state.label()), style = MaterialTheme.typography.titleMedium)
+            link.cause?.let { Text(stringResource(it.label()), style = MaterialTheme.typography.bodyMedium) }
+            link.peer?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            if (link.attemptsRemaining > 0 && link.state == LinkState.RECOVERING) {
+                Text(stringResource(R.string.link_attempts_left, link.attemptsRemaining))
             }
         }
 
-        if (!hidAvailable) {
-            Spacer(Modifier.height(8.dp))
-            // Дословная строка из @string/error_no_hid: «Телефон не поддерживает HID; нужен агент».
-            Text(
-                text = errorNoHid,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
+        when (link.state) {
+            LinkState.NEEDS_PERMISSION -> {
+                Text(stringResource(R.string.link_permission_explanation))
+                Button(onClick = onRequestPermission, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(
+                        if (permissionSettingsRequired) R.string.link_app_settings else R.string.link_allow_bluetooth,
+                    ))
+                }
+            }
+
+            LinkState.STOPPED -> Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_start_session))
+            }
+
+            LinkState.BLUETOOTH_OFF -> Button(onClick = onOpenBluetoothSettings, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_open_bluetooth))
+            }
+
+            LinkState.INIT, LinkState.CONNECTING, LinkState.RECOVERING -> CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp,
             )
-        }
 
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.pair_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        val context = LocalContext.current
-        OutlinedButton(
-            onClick = {
-                runCatching { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-            },
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        ) {
-            Text(stringResource(R.string.open_bt_settings))
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            if (devices.isEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(
-                            if (btEnabled) R.string.empty_devices else R.string.empty_devices_bt_off
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            LinkState.REGISTERED -> {
+                Text(stringResource(R.string.link_pair_on_windows))
+                Button(onClick = onOpenBluetoothSettings, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.link_open_bluetooth))
                 }
-            }
-            items(devices) { device ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start,
-                ) {
-                    RadioButton(
-                        selected = selected == device,
-                        onClick = { selected = device },
-                    )
-                    Column(modifier = Modifier.padding(start = 8.dp)) {
-                        Text(device.name ?: device.address)
-                        Text(device.address, style = MaterialTheme.typography.bodySmall)
+                if (link.cause != null) {
+                    OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.link_retry))
                     }
                 }
             }
+
+            LinkState.NO_PROFILE, LinkState.FAILED -> Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_retry))
+            }
+
+            LinkState.CONNECTED -> Button(onClick = onConnected, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_open_controls))
+            }
+
+            LinkState.NO_ADAPTER -> Unit
         }
 
-        Button(
-            onClick = {
-                val device = selected
-                val connectTo = transport.javaClass.methods.firstOrNull {
-                    it.name == "connectTo" && it.parameterTypes.size == 1
-                }
-                if (connectTo != null && device != null) {
-                    runCatching { connectTo.invoke(transport, device) }
-                }
-                onConnected()
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(connectLabel)
+        if (onBack != null) {
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_back_to_controls))
+            }
+        }
+        if (onStopSession != null) {
+            TextButton(onClick = onStopSession, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.link_stop_session))
+            }
         }
     }
 }
-
-@Suppress("MissingPermission")
-private fun readBondedDevices(): List<BluetoothDevice> =
-    BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.toList() ?: emptyList()

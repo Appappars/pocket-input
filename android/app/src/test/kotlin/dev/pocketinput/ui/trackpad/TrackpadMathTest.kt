@@ -45,15 +45,11 @@ class TrackpadMathTest {
 
     @Test
     fun scrollUnits_directionAndInversion() {
-        // 20 dp -> 120 единиц (один щелчок колеса)
-        assertEquals(-120f, TrackpadMath.scrollUnits(20f), 1e-3f)
-        // инверсия меняет знак
-        assertEquals(120f, TrackpadMath.scrollUnits(20f, invert = true), 1e-3f)
-        // гейн масштабирует: 10 dp × 6 × 0.5 = 30 единиц
-        assertEquals(-30f, TrackpadMath.scrollUnits(10f, gain = 0.5f), 1e-3f)
-        // отрицательное движение: инверсия тоже даёт отрицательные единицы (движение вниз = колесо вниз)
-        assertEquals(-120f, TrackpadMath.scrollUnits(-20f, invert = true), 1e-3f)
-        assertEquals(120f, TrackpadMath.scrollUnits(-20f), 1e-3f)
+        assertEquals(-1f, TrackpadMath.scrollUnits(20f), 1e-3f)
+        assertEquals(1f, TrackpadMath.scrollUnits(20f, invert = true), 1e-3f)
+        assertEquals(-0.25f, TrackpadMath.scrollUnits(10f, gain = 0.5f), 1e-3f)
+        assertEquals(-1f, TrackpadMath.scrollUnits(-20f, invert = true), 1e-3f)
+        assertEquals(1f, TrackpadMath.scrollUnits(-20f), 1e-3f)
     }
 
     @Test
@@ -78,55 +74,47 @@ class TrackpadMathTest {
         assertTrue(TrackpadMath.splitDeltas(0.4f, -0.6f).isEmpty())
     }
 
-    // --- скролл двумя пальцами: 6 единиц на 1 dp, дробный остаток копится ---
-
     @Test
-    fun scroll_givesSixUnitsPerDp() {
-        val step = TrackpadMath.accumulateScroll(0f, 1f * TrackpadMath.SCROLL_UNITS_PER_DP)
-        assertEquals(6, step.units)
+    fun scroll_givesOneDetentPerTwentyDp() {
+        val step = TrackpadMath.accumulateScroll(0f, TrackpadMath.scrollUnits(-20f))
+        assertEquals(1, step.units)
         assertEquals(0f, step.remainder, 1e-4f)
     }
 
     @Test
     fun scroll_accumulatesFractionalRemainder() {
-        // 0.05 dp = 0.3 единицы: первых трёх движений не хватает на целый щелчок
         var rem = 0f
         var sent = 0
         repeat(3) {
-            val step = TrackpadMath.accumulateScroll(rem, 0.05f * TrackpadMath.SCROLL_UNITS_PER_DP)
+            val step = TrackpadMath.accumulateScroll(rem, TrackpadMath.scrollUnits(-6f))
             sent += step.units
             rem = step.remainder
         }
         assertEquals(0, sent)
         assertEquals(0.9f, rem, 1e-3f)
 
-        // четвёртое движение добивает до 1.2 -> уходит 1 единица, 0.2 остаётся
-        val fourth = TrackpadMath.accumulateScroll(rem, 0.05f * TrackpadMath.SCROLL_UNITS_PER_DP)
+        val fourth = TrackpadMath.accumulateScroll(rem, TrackpadMath.scrollUnits(-6f))
         assertEquals(1, fourth.units)
         assertEquals(0.2f, fourth.remainder, 1e-3f)
     }
 
     @Test
     fun scroll_keepsSignOnReversal() {
-        // остаток +0.4 единицы и движение вниз на 0.4 dp (-2.4) -> -2.0: уходит -2, остаток 0
-        val down = TrackpadMath.accumulateScroll(0.4f, -0.4f * TrackpadMath.SCROLL_UNITS_PER_DP)
+        val down = TrackpadMath.accumulateScroll(0.4f, TrackpadMath.scrollUnits(48f))
         assertEquals(-2, down.units)
         assertEquals(0f, down.remainder, 1e-4f)
 
-        // остаток -0.9 и ещё -1.2 -> -2.1: уходит -2, остаётся -0.1
-        val neg = TrackpadMath.accumulateScroll(-0.9f, -0.2f * TrackpadMath.SCROLL_UNITS_PER_DP)
+        val neg = TrackpadMath.accumulateScroll(-0.9f, TrackpadMath.scrollUnits(24f))
         assertEquals(-2, neg.units)
         assertEquals(-0.1f, neg.remainder, 1e-4f)
     }
 
     @Test
     fun scroll_gainScalesUnits() {
-        val step = TrackpadMath.accumulateScroll(0f, 2f * TrackpadMath.SCROLL_UNITS_PER_DP * 1.5f)
-        assertEquals(18, step.units)
+        val step = TrackpadMath.accumulateScroll(0f, TrackpadMath.scrollUnits(-40f, gain = 1.5f))
+        assertEquals(3, step.units)
         assertEquals(0f, step.remainder, 1e-4f)
     }
-
-    // --- двойной тап: окно 350 мс ---
 
     @Test
     fun doubleTap_windowBoundaries() {

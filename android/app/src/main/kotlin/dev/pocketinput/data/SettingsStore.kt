@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * Состояние настроек фазы 1 (docs/phase1-brief.md, контракт неизменен).
+ * Состояние настроек фазы 1.
  *
  * Диапазоны из spec 4.8: чувствительность 0.2..4.0, скролл-гейн 0.2..3.0.
  * Значения клампятся при загрузке — невалидное значение не применяется (spec 4.8).
@@ -29,6 +29,8 @@ data class SettingsState(
 
     /** Порог «тап или перетаскивание» для одного пальца, dp. */
     val tapSlopDp: Float = 8f,
+
+    val tapDragEnabled: Boolean = false,
 ) {
     companion object {
         const val SENSITIVITY_MIN = 0.2f
@@ -115,6 +117,7 @@ class SettingsStore(context: Context) {
         tapSlopDp = SettingsState.clampTapSlop(
             prefs.getFloat(KEY_TAP_SLOP_DP, SettingsState().tapSlopDp),
         ),
+        tapDragEnabled = prefs.getBoolean(KEY_TAP_DRAG, SettingsState().tapDragEnabled),
     )
 
     /** Сохраняет настройки; значения клампятся, чтобы битое состояние не попало на диск. */
@@ -130,6 +133,7 @@ class SettingsStore(context: Context) {
             .putInt(KEY_TAP_HOLD_MS, SettingsState.clampTapAndHold(state.tapAndHoldMs))
             .putInt(KEY_LONG_PRESS_MS, SettingsState.clampLongPress(state.longPressMs))
             .putFloat(KEY_TAP_SLOP_DP, SettingsState.clampTapSlop(state.tapSlopDp))
+            .putBoolean(KEY_TAP_DRAG, state.tapDragEnabled)
             .apply()
     }
 
@@ -145,5 +149,6 @@ class SettingsStore(context: Context) {
         const val KEY_TAP_HOLD_MS = "tap_hold_ms"
         const val KEY_LONG_PRESS_MS = "long_press_ms"
         const val KEY_TAP_SLOP_DP = "tap_slop_dp"
+        const val KEY_TAP_DRAG = "tap_drag_enabled"
     }
 }

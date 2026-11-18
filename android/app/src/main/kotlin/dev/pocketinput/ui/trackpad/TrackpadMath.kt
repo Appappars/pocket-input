@@ -21,8 +21,8 @@ object TrackpadMath {
     /** Скролл отправляется не чаще 60 Гц (docs/phase1-brief.md, «Скролл двумя пальцами»). */
     const val MIN_WHEEL_INTERVAL_NS = 16_666_667L
 
-    /** Шесть единиц колеса на один dp движения пальца. */
-    const val SCROLL_UNITS_PER_DP = 6f
+    /** Одно деление HID-колеса на 20 dp движения пальца. */
+    const val SCROLL_DP_PER_DETENT = 20f
 
     /**
      * Окно второго касания (мс). По умолчанию 500: 350 оказалось мало — второе касание
@@ -62,7 +62,7 @@ object TrackpadMath {
 
     /**
      * Копит дробную часть скролла: [remainder] — остаток с прошлого раза, [unitsDelta] —
-     * приращение в единицах колеса (dp * SCROLL_UNITS_PER_DP * gain). Целые уходят в отчёт,
+     * приращение в делениях колеса. Целые уходят в отчёт,
      * дробь остаётся, поэтому медленное движение тоже когда-нибудь прокрутит.
      * Усечение к нулю: знак остатка совпадает со знаком движения.
      */
@@ -77,7 +77,7 @@ object TrackpadMath {
      * [invert] меняет направление (настройка «инверсия скролла», по умолчанию включена).
      */
     fun scrollUnits(dyDp: Float, gain: Float = 1f, invert: Boolean = false): Float {
-        val units = dyDp * SCROLL_UNITS_PER_DP * gain
+        val units = dyDp / SCROLL_DP_PER_DETENT * gain
         return if (invert) units else -units
     }
 

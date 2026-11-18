@@ -1,31 +1,70 @@
 package dev.pocketinput.ui.keyboard
 
-/**
- * Разница между прежним и новым содержимым поля ввода.
- *
- * Системная клавиатура (IME) правит текст как ей удобно: печатает по символу, вставляет слово
- * целиком из автокоррекции, заменяет выделенное, удаляет по одному. Нам нужно из этого потока
- * получить ровно две вещи: сколько символов стёрто (→ Backspace) и что вставлено (→ keyTap по
- * каждому символу). Функция чистая, поэтому покрывается JVM-тестом.
- */
-object TextDiff {
+import dev.pocketinput.hid.KEYBOARD_QUEUE_CAPACITY
 
-    data class Result(val deleted: Int, val inserted: String) {
-        val isEmpty: Boolean get() = deleted == 0 && inserted.isEmpty()
-    }
+// Полная замена хвоста требует до двух операций на один сохранённый символ.
+internal const val MAX_EDITABLE_TAIL = KEYBOARD_QUEUE_CAPACITY / 2
 
+internal object TextDiff {
+
+    data class Result(val deleted: Int, val inserted: String)
+
+    // HID Backspace работает у курсора в конце. Даже общий суффикс нужно набрать заново.
     fun diff(old: String, new: String): Result {
-        if (old == new) return Result(0, "")
         var prefix = 0
         val maxPrefix = minOf(old.length, new.length)
         while (prefix < maxPrefix && old[prefix] == new[prefix]) prefix++
+        return Result(old.length - prefix, new.substring(prefix))
+    }
+}
 
-        var suffix = 0
-        val maxSuffix = minOf(old.length, new.length) - prefix
-        while (suffix < maxSuffix && old[old.length - 1 - suffix] == new[new.length - 1 - suffix]) suffix++
+internal data class KeyboardEdit(
+    val localText: String,
+    val queuedText: String,
+    val keys: List<Pair<Int, Int>>,
+    val skippedCharacters: Int,
+    val russianLayout: Boolean,
+)
 
-        val deleted = old.length - prefix - suffix
-        val inserted = new.substring(prefix, new.length - suffix)
-        return Result(deleted, inserted)
+internal fun planKeyboardEdit(
+    previouslyQueuedText: String,
+    nextText: String,
+    composing: Boolean,
+    russianLayout: Boolean,
+): KeyboardEdit? {
+    if (composing) return null
+
+    val supportedText = hidText(nextText)
+    val diff = TextDiff.diff(previouslyQueuedText, supportedText)
+    var useRussianLayout = russianLayout
+    val keys = buildList {
+        repeat(diff.deleted) { add(Usages.BACKSPACE to 0) }
+        for (char in diff.inserted) {
+            val key = if (char == '\n') Usages.ENTER to 0 else checkNotNull(CharMap.map(char, useRussianLayout))
+            add(key)
+            when (char.lowercaseChar()) {
+                in 'а'..'я', 'ё' -> useRussianLayout = true
+                in 'a'..'z' -> useRussianLayout = false
+            }
+        }
+    }
+    // Enter может перенести фокус Windows. Доступна правка только текста после Enter.
+    val line = nextText.substringAfterLast('\n')
+    val localText = line.takeLast(MAX_EDITABLE_TAIL).let { tail ->
+        if (line.length > tail.length && tail.first().isLowSurrogate()) tail.drop(1) else tail
+    }
+    val queuedText = if (localText == nextText) supportedText else hidText(localText)
+    return KeyboardEdit(
+        localText = localText,
+        queuedText = queuedText,
+        keys = keys,
+        skippedCharacters = nextText.codePointCount(0, nextText.length) - supportedText.length,
+        russianLayout = useRussianLayout,
+    )
+}
+
+private fun hidText(text: String): String = buildString {
+    for (char in text) {
+        if (char == '\n' || CharMap.map(char) != null) append(char)
     }
 }

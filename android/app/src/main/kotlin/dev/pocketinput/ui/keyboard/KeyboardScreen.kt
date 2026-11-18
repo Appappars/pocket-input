@@ -2,11 +2,14 @@ package dev.pocketinput.ui.keyboard
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
@@ -18,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,40 +33,36 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import dev.pocketinput.R
 import dev.pocketinput.data.SettingsState
 import dev.pocketinput.hid.HidTransport
+import dev.pocketinput.hid.LinkState
 import dev.pocketinput.ui.link.LinkStatusBar
 import dev.pocketinput.ui.trackpad.TrackpadSurface
 
-/** Невидимый символ-заполнитель: держит в поле запас, чтобы удаление всегда меняло текст. */
-private const val FILLER_CHAR = '\u200B'
-private const val FILLER_COUNT = 48
-private const val FILLER_MIN = 8
-private const val BUFFER_MAX = 200
+private enum class InputStatus(val label: Int) {
+    QUEUED(R.string.kb_input_queued),
+    QUEUE_REJECTED(R.string.kb_input_queue_rejected),
+    SEND_FAILED(R.string.kb_input_send_failed),
+}
 
-/**
- * Экран набора текста (решение владельца продукта, 18.11.2026):
- * **системная клавиатура телефона + тачпад в свободном месте над ней**, без собственной
- * раскладки и без панели спецклавиш.
- *
- * Механика: в поле-невидимке лежит «заполнитель» из невидимых символов, поэтому нажатие
- * «стереть» в IME всегда меняет текст — и мы видим его в диффе и отправляем Backspace на ПК
- * (иначе на пустом поле кнопка стирания не делает ничего и на ПК ничего не уходит).
- *
- * Изменения текста диффятся ([TextDiff]): удаления → Backspace, вставленный текст → по одному
- * `keyTap` через [CharMap]. Кириллица уходит позициями клавиш; если набирают кириллицу, знаки
- * препинания маппятся по правилам русской раскладки (запятая = Shift+«/»), иначе — по US.
- */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun KeyboardScreen(
     transport: HidTransport,
@@ -69,75 +70,110 @@ fun KeyboardScreen(
     onLayoutChange: (String) -> Unit,
     onBack: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenConnection: () -> Unit,
 ) {
-    val filler = remember { FILLER_CHAR.toString().repeat(FILLER_COUNT) }
-    // Курсор держим В КОНЦЕ поля: иначе «стереть» в IME удаляет перед курсором,
-    // а курсор стоит в начале строки — и на ПК не уходит ничего (находка владельца продукта).
-    var field by remember {
-        mutableStateOf(TextFieldValue(filler, selection = TextRange(filler.length)))
+    val link = transport.link
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ ->
+            resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
-    var ruLayout by remember { mutableStateOf(settings.layout.equals("ru", ignoreCase = true)) }
-    var unsupported by remember { mutableStateOf(0) }
+
+    val connected = link.state == LinkState.CONNECTED && link.sessionId != 0L
+    val sessionId = if (resumed && connected) link.sessionId else 0L
+    val editorActive = sessionId != 0L
+    val editRevision = link.keyboardRevision
+    var revision by remember(transport, sessionId, editRevision) { mutableIntStateOf(0) }
+    val editorRevision = revision
+
+    var field by remember(transport, sessionId, editRevision, editorRevision) {
+        mutableStateOf(TextFieldValue())
+    }
+    var committedField by remember(transport, sessionId, editRevision, editorRevision) {
+        mutableStateOf(TextFieldValue())
+    }
+    var queuedText by remember(transport, sessionId, editRevision, editorRevision) {
+        mutableStateOf("")
+    }
+    var russianLayout by remember(transport, sessionId) {
+        mutableStateOf(settings.layout.equals("ru", ignoreCase = true))
+    }
+    var skipped by remember(transport, sessionId, editRevision) { mutableIntStateOf(0) }
+    var inputStatus by remember(transport, sessionId, editRevision) {
+        mutableStateOf<InputStatus?>(null)
+    }
 
     val focus = remember { FocusRequester() }
     val ime = LocalSoftwareKeyboardController.current
+    val imeVisible = WindowInsets.isImeVisible
+    var requestInitialKeyboard by remember(transport, sessionId) { mutableStateOf(editorActive) }
 
-    // Экран существует ради набора: сразу поднимаем системную клавиатуру.
-    LaunchedEffect(Unit) {
+    fun showKeyboard() {
         focus.requestFocus()
         ime?.show()
     }
 
-    // Уход с экрана не должен оставить модификатор зажатым на ПК.
-    DisposableEffect(Unit) { onDispose { transport.keyUp() } }
+    LaunchedEffect(transport, sessionId, editRevision, editorRevision) {
+        if (!editorActive) {
+            ime?.hide()
+        } else if (requestInitialKeyboard || imeVisible) {
+            requestInitialKeyboard = false
+            showKeyboard()
+        }
+    }
 
-    fun handleChange(newValue: TextFieldValue) {
-        val next = newValue.text
-        if (next == field.text) {
-            // Текст не изменился, но курсор мог уехать — возвращаем его в конец.
-            field = newValue.copy(selection = TextRange(next.length))
+    DisposableEffect(transport, sessionId) {
+        onDispose {
+            if (editorActive) transport.keyUp(expectedSessionId = sessionId)
+        }
+    }
+
+    fun handleChange(value: TextFieldValue) {
+        val current = transport.link
+        if (!editorActive || !resumed || current.state != LinkState.CONNECTED || current.sessionId != sessionId ||
+            current.keyboardRevision != editRevision || revision != editorRevision
+        ) {
             return
         }
-        val d = TextDiff.diff(field.text, next)
-
-        // Всё, что исчезло из поля, включая невидимые заполнители, — это Backspace на ПК.
-        if (d.deleted > 0) repeat(d.deleted) { transport.keyTap(Usages.BACKSPACE) }
-
-        d.inserted.filter { it != FILLER_CHAR }.forEach { ch ->
-            if (ch == '\n') {
-                transport.keyTap(Usages.ENTER)
-                return@forEach
+        val edit = planKeyboardEdit(queuedText, value.text, value.composition != null, russianLayout)
+        if (edit == null) {
+            field = value
+            return
+        }
+        if (edit.keys.isNotEmpty()) {
+            if (!transport.keyTaps(edit.keys, sessionId, editRevision)) {
+                field = committedField
+                inputStatus = InputStatus.QUEUE_REJECTED
+                return
             }
-            val mapped = CharMap.map(ch, ruLayout)
-            if (mapped == null) {
-                unsupported++
-                return@forEach
-            }
-            val (usage, extra) = mapped
-            transport.keyTap(usage, extra)
-            when {
-                ch.isCyrillicLetter() -> {
-                    if (!ruLayout) {
-                        ruLayout = true
-                        onLayoutChange("ru")
-                    }
-                }
-                ch in 'a'..'z' || ch in 'A'..'Z' -> {
-                    if (ruLayout) {
-                        ruLayout = false
-                        onLayoutChange("en")
-                    }
-                }
+            inputStatus = InputStatus.QUEUED
+            if (edit.russianLayout != russianLayout) {
+                russianLayout = edit.russianLayout
+                onLayoutChange(if (russianLayout) "ru" else "en")
             }
         }
+        skipped = edit.skippedCharacters
+        queuedText = edit.queuedText
+        committedField = TextFieldValue(edit.localText, selection = TextRange(edit.localText.length))
+        field = committedField
+    }
 
-        // Держим запас заполнителей: иначе «стереть» на опустевшем поле ничего не делает.
-        val updated = when {
-            next.length > BUFFER_MAX -> filler
-            next.count { it == FILLER_CHAR } < FILLER_MIN -> filler + next
-            else -> next
-        }
-        field = TextFieldValue(updated, selection = TextRange(updated.length))
+    fun invalidateTail() {
+        if (revision != editorRevision) return
+        if (field.text.isEmpty() && field.composition == null && committedField.text.isEmpty()) return
+        skipped = 0
+        revision++
+    }
+
+    fun deleteOnPc() {
+        if (!editorActive || !resumed) return
+        val accepted = transport.keyTaps(listOf(Usages.BACKSPACE to 0), sessionId, editRevision)
+        if (accepted) invalidateTail()
+        inputStatus = if (accepted) InputStatus.QUEUED else InputStatus.QUEUE_REJECTED
     }
 
     Column(
@@ -159,55 +195,80 @@ fun KeyboardScreen(
                 modifier = Modifier.weight(1f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
             )
-            TextButton(
-                onClick = { focus.requestFocus(); ime?.show() },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text("⌨", style = MaterialTheme.typography.titleMedium)
-            }
         }
 
         LinkStatusBar(
-            link = transport.link,
-            onClick = onOpenDiagnostics,
+            link = link,
+            onClick = {
+                if (transport.link.state == LinkState.CONNECTED) onOpenDiagnostics() else onOpenConnection()
+            },
             modifier = Modifier.padding(bottom = 6.dp),
         )
-
-        // Свободное место над системной клавиатурой работает тачпадом: переключаться не нужно.
+        Text(
+            text = stringResource(if (connected) R.string.kb_windows_layout else R.string.kb_connection_hint),
+            style = MaterialTheme.typography.labelSmall,
+        )
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             TrackpadSurface(
                 transport = transport,
                 settings = settings,
                 modifier = Modifier.fillMaxSize(),
+                onFocusChangingInput = ::invalidateTail,
             )
-            // Поле-невидимка: только фокус и приём текста от IME, размер 1 dp.
-            BasicTextField(
-                value = field,
-                onValueChange = { handleChange(it) },
-                modifier = Modifier
-                    .size(1.dp)
-                    .alpha(0.01f)
-                    .focusRequester(focus),
-                textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
-                cursorBrush = SolidColor(Color.Transparent),
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                    imeAction = ImeAction.None,
-                ),
-            )
+            if (editorActive) {
+                key(transport, sessionId, editRevision, editorRevision) {
+                    BasicTextField(
+                        value = field,
+                        onValueChange = ::handleChange,
+                        modifier = Modifier
+                            .size(1.dp)
+                            .alpha(0.01f)
+                            .focusRequester(focus)
+                            .clearAndSetSemantics {},
+                        textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
+                        cursorBrush = SolidColor(Color.Transparent),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                            imeAction = ImeAction.None,
+                        ),
+                    )
+                }
+            }
         }
 
-        if (unsupported > 0) {
-            Text(
-                text = stringResource(R.string.kb_unsupported, unsupported),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+        if (editorActive) {
+            val failureStatus = InputStatus.SEND_FAILED.takeIf { link.keyboardFailureRevision == editRevision }
+            (inputStatus ?: failureStatus)?.let { status ->
+                Text(
+                    text = stringResource(status.label),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = if (status == InputStatus.QUEUED) Modifier else Modifier.semantics {
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                    color = if (status == InputStatus.QUEUED) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
+            if (skipped > 0) {
+                Text(
+                    text = stringResource(R.string.kb_input_skipped),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = ::showKeyboard, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.kb_show_keyboard))
+                }
+                TextButton(onClick = ::deleteOnPc, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.kb_delete_on_pc))
+                }
+            }
         }
     }
 }
-
-private fun Char.isCyrillicLetter(): Boolean =
-    this in 'а'..'я' || this in 'А'..'Я' || this == 'ё' || this == 'Ё'

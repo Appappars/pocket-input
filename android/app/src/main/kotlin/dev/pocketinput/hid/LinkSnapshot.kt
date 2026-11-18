@@ -1,96 +1,97 @@
 package dev.pocketinput.hid
 
-/**
- * Состояние канала «телефон ↔ ПК» для индикатора и экрана диагностики.
- *
- * Честная оговорка: RSSI (уровень радиосигнала) для классического Bluetooth-HID публичный
- * Android API не отдаёт — `BluetoothDevice` не имеет метода вроде `readRemoteRssi()` для
- * BR/EDR-соединения, а `BluetoothGatt` относится только к BLE. Поэтому «качество» здесь —
- * не сила сигнала, а измеряемая пригодность канала: задержка постановки отчёта в очередь,
- * доля неудачных `sendReport` и число разрывов.
- */
 enum class LinkState {
-    /** Транспорт создан, профиль ещё запрашивается. */
-    INIT,
-
-    /** На телефоне нет Bluetooth-адаптера. */
+    STOPPED,
+    NEEDS_PERMISSION,
+    BLUETOOTH_OFF,
     NO_ADAPTER,
-
-    /** Прошивка не отдала профиль HID_DEVICE (OEM без поддержки) — нужен агент. */
+    INIT,
     NO_PROFILE,
-
-    /** HID-приложение зарегистрировано, но ПК не подключён. */
     REGISTERED,
-
-    /** Регистрация не удалась. */
+    CONNECTING,
+    RECOVERING,
     FAILED,
-
-    /** Канал поднят: ПК подключён, отчёты уходят. */
     CONNECTED,
 }
 
-/** Уровень качества канала для индикатора. */
-enum class Quality { UNKNOWN, GOOD, MEDIUM, POOR }
-
-/**
- * Снимок состояния канала (неизменяемый, публикуется в Compose-состояние).
- *
- * @param score 0..100; −1 означает «не измерено» (нет связи или ещё нет отправок).
- */
-data class LinkSnapshot(
-    val state: LinkState = LinkState.INIT,
-    val peer: String? = null,
-    val quality: Quality = Quality.UNKNOWN,
-    val score: Int = -1,
-    val p50Ms: Float = 0f,
-    val p95Ms: Float = 0f,
-    val sentOk: Long = 0,
-    val sendFailed: Long = 0,
-    val disconnects: Int = 0,
-    val connectedSinceMs: Long = 0,
-    val lastDisconnectMs: Long = 0,
-) {
-    val isConnected: Boolean get() = state == LinkState.CONNECTED
-    val totalSends: Long get() = sentOk + sendFailed
+enum class LinkCause {
+    PROFILE_UNAVAILABLE,
+    PROFILE_TIMEOUT,
+    PROFILE_LOST,
+    REGISTRATION_FAILED,
+    REGISTRATION_LOST,
+    HOST_DISCONNECTED,
+    HOST_UNAVAILABLE,
+    SERVICE_FAILED,
 }
 
-/**
- * Оценка качества канала по измеряемым признакам. Чистая функция — покрыта JVM-тестом.
- *
- * Штрафы:
- *  - задержка очереди: до 8 мс — 0, далее линейно до 45 баллов на 40 мс;
- *  - доля неудачных отправок: до 30 баллов (100 % ошибок = −30);
- *  - разрывы за сессию: по 7 баллов, не больше 20.
- */
-object LinkQuality {
+data class LinkEvent(val atMs: Long, val state: LinkState, val cause: LinkCause?)
 
-    const val LATENCY_FREE_MS = 8f
-    const val LATENCY_BAD_MS = 40f
+data class LinkSnapshot(
+    val state: LinkState = LinkState.STOPPED,
+    val cause: LinkCause? = null,
+    val sessionId: Long = 0,
+    val keyboardRevision: Long = 0,
+    val keyboardFailureRevision: Long? = null,
+    val peer: String? = null,
+    val attemptsRemaining: Int = 0,
+    val queueP95Ms: Float = 0f,
+    val sampleCount: Int = 0,
+    val recentFailures: Int = 0,
+    val sentOk: Long = 0,
+    val sendFailed: Long = 0,
+    val history: List<LinkEvent> = emptyList(),
+) {
+    val isConnected: Boolean get() = state == LinkState.CONNECTED
+}
 
-    fun score(p50Ms: Float, failedRatio: Float, disconnects: Int): Int {
-        val latencyOver =
-            ((p50Ms - LATENCY_FREE_MS) / (LATENCY_BAD_MS - LATENCY_FREE_MS)).coerceIn(0f, 1f)
-        val latencyPenalty = latencyOver * 45f
-        val failurePenalty = failedRatio.coerceIn(0f, 1f) * 30f
-        val disconnectPenalty = (disconnects * 7).coerceAtMost(20).toFloat()
-        return (100f - latencyPenalty - failurePenalty - disconnectPenalty)
-            .coerceIn(0f, 100f)
-            .toInt()
+internal class LinkMeasurements {
+    private data class Sample(val queueMs: Float, val sent: Boolean)
+
+    private val samples = ArrayDeque<Sample>(WINDOW)
+    private var successes = 0L
+    private var failures = 0L
+
+    fun reset() {
+        samples.clear()
+        successes = 0
+        failures = 0
     }
 
-    /** Уровень по баллам; [score] < 0 — не измерено. */
-    fun level(score: Int): Quality = when {
-        score < 0 -> Quality.UNKNOWN
-        score >= 85 -> Quality.GOOD
-        score >= 55 -> Quality.MEDIUM
-        else -> Quality.POOR
+    fun record(queueMs: Float, sent: Boolean) {
+        if (samples.size == WINDOW) samples.removeFirst()
+        samples.addLast(Sample(queueMs, sent))
+        if (sent) successes++ else failures++
     }
 
-    /** 95-й процентиль по окну замеров (пустое окно — 0). */
-    fun percentile95(samples: List<Float>): Float {
-        if (samples.isEmpty()) return 0f
-        val sorted = samples.sorted()
-        val index = ((sorted.size - 1) * 0.95f).toInt().coerceIn(0, sorted.lastIndex)
-        return sorted[index]
+    fun update(snapshot: LinkSnapshot): LinkSnapshot {
+        val delays = samples.map { it.queueMs }.sorted()
+        val p95Index = ((delays.size * 95 + 99) / 100 - 1).coerceAtLeast(0)
+        return snapshot.copy(
+            queueP95Ms = delays.getOrNull(p95Index) ?: 0f,
+            sampleCount = samples.size,
+            recentFailures = samples.count { !it.sent },
+            sentOk = successes,
+            sendFailed = failures,
+        )
+    }
+
+    companion object {
+        const val WINDOW = 64
+    }
+}
+
+internal class LinkBackoff {
+    private var next = 0
+    val remaining: Int get() = delays.size - next
+
+    fun takeDelayMs(): Long? = delays.getOrNull(next)?.also { next++ }
+
+    fun reset() {
+        next = 0
+    }
+
+    private companion object {
+        val delays = longArrayOf(750, 2_000, 5_000)
     }
 }
