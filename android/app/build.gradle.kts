@@ -12,8 +12,8 @@ android {
         applicationId = "dev.pocketinput"
         minSdk = 28
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.3.0-link"
+        versionCode = 9
+        versionName = "0.3.1-gesture-settings"
     }
 
     buildTypes {

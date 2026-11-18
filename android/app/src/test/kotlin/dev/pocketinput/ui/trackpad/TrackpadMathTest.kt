@@ -130,9 +130,13 @@ class TrackpadMathTest {
 
     @Test
     fun doubleTap_windowBoundaries() {
-        assertTrue("349 мс — ещё двойной тап", TrackpadMath.isDoubleTap(1000L, 1349L, 0f))
-        assertTrue("350 мс — граница включительно", TrackpadMath.isDoubleTap(1000L, 1350L, 0f))
-        assertFalse("351 мс — уже одиночный", TrackpadMath.isDoubleTap(1000L, 1351L, 0f))
+        assertTrue("499 мс — ещё двойной тап", TrackpadMath.isDoubleTap(1000L, 1499L, 0f))
+        assertTrue("500 мс — граница включительно", TrackpadMath.isDoubleTap(1000L, 1500L, 0f))
+        assertFalse("501 мс — уже одиночный", TrackpadMath.isDoubleTap(1000L, 1501L, 0f))
+        // Окно и порог сдвига приходят из настроек, а не из константы.
+        assertTrue("кастомное окно 800 мс", TrackpadMath.isDoubleTap(1000L, 1750L, 0f, windowMs = 800L))
+        assertFalse("кастомное окно 200 мс", TrackpadMath.isDoubleTap(1000L, 1300L, 0f, windowMs = 200L))
+        assertTrue("кастомный порог сдвига 12 dp", TrackpadMath.isDoubleTap(1000L, 1200L, 11f, thresholdDp = 12f))
     }
 
     @Test

@@ -93,6 +93,58 @@ fun SettingsScreen(
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
 
+                Text(
+                    text = stringResource(R.string.settings_gestures),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Пороги жестов: те же числа, что использует TrackpadSurface.
+                SettingIntSlider(
+                    label = stringResource(R.string.settings_double_tap_window),
+                    value = state.doubleTapWindowMs,
+                    range = SettingsState.DOUBLE_TAP_MIN_MS..SettingsState.DOUBLE_TAP_MAX_MS,
+                    step = 50,
+                    unit = "ms",
+                    onValueChange = {
+                        onChange(state.copy(doubleTapWindowMs = SettingsState.clampDoubleTapWindow(it)))
+                    },
+                )
+                SettingIntSlider(
+                    label = stringResource(R.string.settings_tap_hold),
+                    value = state.tapAndHoldMs,
+                    range = SettingsState.TAP_HOLD_MIN_MS..SettingsState.TAP_HOLD_MAX_MS,
+                    step = 20,
+                    unit = "ms",
+                    onValueChange = {
+                        onChange(state.copy(tapAndHoldMs = SettingsState.clampTapAndHold(it)))
+                    },
+                )
+                SettingIntSlider(
+                    label = stringResource(R.string.settings_long_press),
+                    value = state.longPressMs,
+                    range = SettingsState.LONG_PRESS_MIN_MS..SettingsState.LONG_PRESS_MAX_MS,
+                    step = 50,
+                    unit = "ms",
+                    onValueChange = {
+                        onChange(state.copy(longPressMs = SettingsState.clampLongPress(it)))
+                    },
+                )
+                SettingIntSlider(
+                    label = stringResource(R.string.settings_tap_slop),
+                    value = state.tapSlopDp.roundToInt(),
+                    range = SettingsState.TAP_SLOP_MIN_DP.toInt()..SettingsState.TAP_SLOP_MAX_DP.toInt(),
+                    step = 1,
+                    unit = "dp",
+                    onValueChange = {
+                        onChange(state.copy(tapSlopDp = SettingsState.clampTapSlop(it.toFloat())))
+                    },
+                )
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -218,6 +270,38 @@ private fun SettingSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun SettingIntSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    step: Int,
+    unit: String,
+    onValueChange: (Int) -> Unit,
+) {
+    val coefficients = (range.last - range.first) / step
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = "$value $unit",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Slider(
+            value = value.toFloat().coerceIn(range.first.toFloat(), range.last.toFloat()),
+            onValueChange = { raw -> onValueChange((raw / step).roundToInt() * step) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = (coefficients - 1).coerceAtLeast(0),
+        )
     }
 }
 

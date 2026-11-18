@@ -17,12 +17,33 @@ data class SettingsState(
     val layout: String = LAYOUT_EN,
     /** Инверсия направления скролла; по умолчанию инвертирован (решение владельца продукта, 18.11). */
     val invertScroll: Boolean = true,
+
+    /** Окно второго касания, мс: сколько даётся, чтобы второе касание считалось частью жеста. */
+    val doubleTapWindowMs: Int = 500,
+
+    /** Сколько второе касание держится до начала перетаскивания, мс. */
+    val tapAndHoldMs: Int = 150,
+
+    /** Удержание одного пальца без сдвига для правой кнопки, мс. */
+    val longPressMs: Int = 500,
+
+    /** Порог «тап или перетаскивание» для одного пальца, dp. */
+    val tapSlopDp: Float = 8f,
 ) {
     companion object {
         const val SENSITIVITY_MIN = 0.2f
         const val SENSITIVITY_MAX = 4.0f
         const val SCROLL_MIN = 0.2f
         const val SCROLL_MAX = 3.0f
+
+        const val DOUBLE_TAP_MIN_MS = 200
+        const val DOUBLE_TAP_MAX_MS = 800
+        const val TAP_HOLD_MIN_MS = 80
+        const val TAP_HOLD_MAX_MS = 400
+        const val LONG_PRESS_MIN_MS = 300
+        const val LONG_PRESS_MAX_MS = 900
+        const val TAP_SLOP_MIN_DP = 4f
+        const val TAP_SLOP_MAX_DP = 20f
 
         const val THEME_SYSTEM = "system"
         const val THEME_DARK = "dark"
@@ -48,6 +69,16 @@ data class SettingsState(
 
         fun normalizeLayout(value: String?): String =
             if (value in LAYOUTS) value!! else LAYOUT_EN
+
+        fun clampDoubleTapWindow(value: Int): Int = value.coerceIn(DOUBLE_TAP_MIN_MS, DOUBLE_TAP_MAX_MS)
+
+        fun clampTapAndHold(value: Int): Int = value.coerceIn(TAP_HOLD_MIN_MS, TAP_HOLD_MAX_MS)
+
+        fun clampLongPress(value: Int): Int = value.coerceIn(LONG_PRESS_MIN_MS, LONG_PRESS_MAX_MS)
+
+        fun clampTapSlop(value: Float): Float =
+            if (value.isNaN() || value.isInfinite()) TAP_SLOP_MIN_DP
+            else value.coerceIn(TAP_SLOP_MIN_DP, TAP_SLOP_MAX_DP)
     }
 }
 
@@ -72,6 +103,18 @@ class SettingsStore(context: Context) {
         theme = SettingsState.normalizeTheme(prefs.getString(KEY_THEME, null)),
         layout = SettingsState.normalizeLayout(prefs.getString(KEY_LAYOUT, null)),
         invertScroll = prefs.getBoolean(KEY_INVERT_SCROLL, SettingsState().invertScroll),
+        doubleTapWindowMs = SettingsState.clampDoubleTapWindow(
+            prefs.getInt(KEY_DOUBLE_TAP_MS, SettingsState().doubleTapWindowMs),
+        ),
+        tapAndHoldMs = SettingsState.clampTapAndHold(
+            prefs.getInt(KEY_TAP_HOLD_MS, SettingsState().tapAndHoldMs),
+        ),
+        longPressMs = SettingsState.clampLongPress(
+            prefs.getInt(KEY_LONG_PRESS_MS, SettingsState().longPressMs),
+        ),
+        tapSlopDp = SettingsState.clampTapSlop(
+            prefs.getFloat(KEY_TAP_SLOP_DP, SettingsState().tapSlopDp),
+        ),
     )
 
     /** Сохраняет настройки; значения клампятся, чтобы битое состояние не попало на диск. */
@@ -83,6 +126,10 @@ class SettingsStore(context: Context) {
             .putString(KEY_THEME, SettingsState.normalizeTheme(state.theme))
             .putString(KEY_LAYOUT, SettingsState.normalizeLayout(state.layout))
             .putBoolean(KEY_INVERT_SCROLL, state.invertScroll)
+            .putInt(KEY_DOUBLE_TAP_MS, SettingsState.clampDoubleTapWindow(state.doubleTapWindowMs))
+            .putInt(KEY_TAP_HOLD_MS, SettingsState.clampTapAndHold(state.tapAndHoldMs))
+            .putInt(KEY_LONG_PRESS_MS, SettingsState.clampLongPress(state.longPressMs))
+            .putFloat(KEY_TAP_SLOP_DP, SettingsState.clampTapSlop(state.tapSlopDp))
             .apply()
     }
 
@@ -94,5 +141,9 @@ class SettingsStore(context: Context) {
         const val KEY_THEME = "theme"
         const val KEY_LAYOUT = "layout"
         const val KEY_INVERT_SCROLL = "invert_scroll"
+        const val KEY_DOUBLE_TAP_MS = "double_tap_ms"
+        const val KEY_TAP_HOLD_MS = "tap_hold_ms"
+        const val KEY_LONG_PRESS_MS = "long_press_ms"
+        const val KEY_TAP_SLOP_DP = "tap_slop_dp"
     }
 }

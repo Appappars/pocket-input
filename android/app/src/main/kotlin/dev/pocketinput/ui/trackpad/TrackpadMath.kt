@@ -24,8 +24,12 @@ object TrackpadMath {
     /** Шесть единиц колеса на один dp движения пальца. */
     const val SCROLL_UNITS_PER_DP = 6f
 
-    /** Окно двойного тапа, мс. */
-    const val DOUBLE_TAP_MS = 350L
+    /**
+     * Окно второго касания (мс). По умолчанию 500: 350 оказалось мало — второе касание
+     * для перетаскивания не успевало попасть в окно (замечание владельца, 18.11).
+     * Значение настраивается (SettingsState.doubleTapWindowMs).
+     */
+    const val DOUBLE_TAP_MS = 500L
 
     /** Удержание для правой кнопки, мс. */
     const val LONG_PRESS_MS = 500L
@@ -34,7 +38,7 @@ object TrackpadMath {
      * Второй тап, который держат дольше этого времени, — не двойной клик, а начало
      * перетаскивания (как «tap twice and drag» на тачпаде ноутбука).
      */
-    const val TAP_AND_HOLD_MS = 60L
+    const val TAP_AND_HOLD_MS = 150L
 
     /** Порог свайпа тремя пальцами, dp. */
     const val THREE_FINGER_DP = 60f

@@ -73,6 +73,11 @@ fun TrackpadSurface(
     val scrollGain = settings.scrollGain
     val invertScroll = settings.invertScroll
     val vibration = settings.vibration
+    // Пороги жестов — из настроек (SettingsState), а не из констант: владелец просил крутить их вживую.
+    val tapSlop = settings.tapSlopDp
+    val doubleTapWindowMs = settings.doubleTapWindowMs.toLong()
+    val tapAndHoldMs = settings.tapAndHoldMs.toLong()
+    val longPressMs = settings.longPressMs.toLong()
 
     var lastTapUpMs by remember { mutableLongStateOf(0L) }
 
@@ -96,18 +101,28 @@ fun TrackpadSurface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(12.dp),
             )
-            .pointerInput(transport, density, sensitivity, scrollGain, invertScroll, vibration) {
+            .pointerInput(
+                    transport, density, sensitivity, scrollGain, invertScroll, vibration,
+                    tapSlop, doubleTapWindowMs, tapAndHoldMs, longPressMs,
+                ) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     val downMs = down.uptimeMillis
 
                     // ── Второе касание: удержание = перетаскивание, короткое = ничего.
-                    if (TrackpadMath.isDoubleTap(lastTapUpMs, downMs, 0f)) {
+                    if (TrackpadMath.isDoubleTap(
+                            lastTapUpMs,
+                            downMs,
+                            0f,
+                            windowMs = doubleTapWindowMs,
+                            thresholdDp = tapSlop,
+                        )
+                    ) {
                         lastTapUpMs = 0L
                         // Двойного клика НЕТ (он разворачивал окно вместо перетаскивания):
                         // второе касание либо сразу тянет объект, либо не делает ничего.
-                        val whileHeld = withTimeoutOrNull(TrackpadMath.TAP_AND_HOLD_MS) {
+                        val whileHeld = withTimeoutOrNull(tapAndHoldMs) {
                             awaitPointerEvent()
                         }
                         val stillDown = whileHeld?.changes?.any { it.pressed } ?: false
@@ -157,7 +172,7 @@ fun TrackpadSurface(
                         val nowMs = SystemClock.uptimeMillis()
                         val canLongPress = !longPressFired && !dragging &&
                             !scrollMode && !threeMode && maxPointers == 1
-                        val remaining = TrackpadMath.LONG_PRESS_MS - (nowMs - downMs)
+                        val remaining = longPressMs - (nowMs - downMs)
                         val event = if (canLongPress && remaining > 0L) {
                             withTimeoutOrNull(remaining) { awaitPointerEvent() }
                         } else {
@@ -228,7 +243,7 @@ fun TrackpadSurface(
 
                             else -> {
                                 totalShiftDp += TrackpadMath.distanceDp(dxDp, dyDp)
-                                if (!dragging && !TrackpadMath.isTap(totalShiftDp)) {
+                                if (!dragging && !TrackpadMath.isTap(totalShiftDp, tapSlop)) {
                                     dragging = true
                                 }
                                 if (dragging && !longPressFired) {
@@ -278,7 +293,7 @@ fun TrackpadSurface(
                         // Курсор уже двигался: это drag, не клик.
                         dragging -> Unit
 
-                        TrackpadMath.isTap(totalShiftDp) -> {
+                        TrackpadMath.isTap(totalShiftDp, tapSlop) -> {
                             // Первый тап: клик. Признак «был тап» запоминаем на DOUBLE_TAP_MS,
                             // чтобы следующий короткий тап стал двойным кликом, а с удержанием — drag.
                             lastTapUpMs = releaseMs
