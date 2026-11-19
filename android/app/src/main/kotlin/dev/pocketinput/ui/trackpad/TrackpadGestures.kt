@@ -260,6 +260,10 @@ internal class TrackpadGestures(
     }
 
     private fun updateEdge(position: TrackpadPoint, dx: Float, dy: Float, nowMs: Long) {
+        if (!dragging()) {
+            stopAtEdge()
+            return
+        }
         val size = padSize?.invoke() ?: return
         edgeX.update(position.x, size.widthDp, dx)
         edgeY.update(position.y, size.heightDp, dy)

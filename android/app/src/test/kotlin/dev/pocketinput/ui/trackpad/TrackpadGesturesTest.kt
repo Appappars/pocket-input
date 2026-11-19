@@ -18,27 +18,22 @@ import org.junit.Test
 
 class TrackpadGesturesTest {
     @Test
-    fun pointerKeepsMovingAtTheEdgeUntilRelease() {
+    fun ordinaryPointerStopsAtTheEdge() {
         val input = Input(padWidthDp = 200f)
         input.frame(1000, finger(1, x = 130f))
         input.frame(1020, finger(1, x = 198f))
-        assertEquals(listOf(Motion(68, 0)), input.actions)
-        assertEquals(1036L, input.gestures.nextDeadlineMs)
 
-        input.gestures.advance(1036)
-        input.gestures.advance(1052)
-        assertEquals(3, input.actions.size)
-        assertTrue(input.actions.drop(1).all { it is Motion && it.dx > 0 && it.dy == 0 })
-
-        input.frame(1053, finger(1, x = 198f, pressed = false))
         assertNull(input.gestures.nextDeadlineMs)
         input.gestures.advance(1200)
-        assertEquals(3, input.actions.size)
+        input.frame(1220, finger(1, x = 203f))
+        assertEquals(listOf(Motion(68, 0), Motion(5, 0)), input.actions)
+        assertNull(input.gestures.nextDeadlineMs)
     }
 
     @Test
     fun movingBackStopsEdgeMotionWhileStillNearTheEdge() {
         val input = Input(padHeightDp = 200f)
+        input.leftLatched = true
         input.frame(1000, finger(1, y = 70f))
         input.frame(1020, finger(1, y = 2f))
         input.gestures.advance(1036)
@@ -54,6 +49,7 @@ class TrackpadGesturesTest {
     @Test
     fun smallStepsMovingInwardAccumulateAndStopEdgeMotion() {
         val input = Input(padHeightDp = 200f)
+        input.leftLatched = true
         input.frame(1000, finger(1, y = 70f))
         input.frame(1020, finger(1, y = 2f))
         input.gestures.advance(1036)
@@ -69,6 +65,7 @@ class TrackpadGesturesTest {
     @Test
     fun aSmallStepIntoTheEdgeZoneStillStartsEdgeMotion() {
         val input = Input(padWidthDp = 200f)
+        input.leftLatched = true
         input.frame(1000, finger(1, x = 130f))
         input.frame(1020, finger(1, x = 181.8f))
         input.frame(1040, finger(1, x = 182.2f))
@@ -83,12 +80,33 @@ class TrackpadGesturesTest {
         input.frame(1000, finger(1, x = 130f))
         input.frame(1150, finger(1, x = 198f))
         input.gestures.advance(1166)
-        input.frame(1170, finger(1, x = 198f, pressed = false))
+        input.gestures.advance(1182)
+        input.frame(1186, finger(1, x = 198f, pressed = false))
         input.gestures.advance(1300)
 
-        assertEquals(HOLD_LEFT, input.actions.first())
+        assertEquals(5, input.actions.size)
+        assertEquals(listOf(HOLD_LEFT, Motion(68, 0)), input.actions.take(2))
+        assertTrue(input.actions.subList(2, 4).all { it is Motion && it.dx > 0 && it.dy == 0 })
         assertEquals(RELEASE_LEFT, input.actions.last())
-        assertEquals(4, input.actions.size)
+        assertNull(input.gestures.nextDeadlineMs)
+    }
+
+    @Test
+    fun unlockingLeftButtonStopsEdgeMotionWithFingerStillDown() {
+        val input = Input(padWidthDp = 200f)
+        input.leftLatched = true
+        input.frame(1000, finger(1, x = 130f))
+        input.frame(1020, finger(1, x = 198f))
+        input.gestures.advance(1036)
+        assertEquals(2, input.actions.size)
+        val edgeStep = input.actions.last() as Motion
+        assertTrue(edgeStep.dx > 0)
+
+        input.leftLatched = false
+        input.gestures.advance(1052)
+        input.frame(1070, finger(1, x = 203f))
+
+        assertEquals(listOf(Motion(68, 0), edgeStep, Motion(5, 0)), input.actions)
         assertNull(input.gestures.nextDeadlineMs)
     }
 
