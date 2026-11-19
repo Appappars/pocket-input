@@ -2,10 +2,13 @@ package dev.pocketinput.ui.trackpad
 
 import android.os.SystemClock
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -13,13 +16,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -45,6 +54,8 @@ fun TrackpadSurface(
     onLeftHold: ((Boolean) -> Unit)? = null,
     onLeftHoldCancelled: (() -> Boolean)? = null,
     onFocusChangingInput: () -> Unit = {},
+    label: String? = null,
+    hint: String? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current.density
@@ -68,13 +79,15 @@ fun TrackpadSurface(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Box(
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(16.dp)
+    val edgeColor = if (leftLatched) colors.primary else colors.outline
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-            )
+            .background(color = colors.surfaceVariant, shape = shape)
+            .border(1.dp, edgeColor, shape)
+            .drawBehind { drawTrackpadCorners(edgeColor) }
             .onSizeChanged { padSize = it }
             .pointerInput(transport, sessionId, density, settings) {
                 if (sessionId == 0L) return@pointerInput
@@ -199,5 +212,42 @@ fun TrackpadSurface(
                     recognizer.cancel()
                 }
             },
-    )
+    ) {
+        if (label != null && maxHeight >= 72.dp) {
+            Text(
+                text = label,
+                color = colors.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = 32.dp, top = 16.dp, end = 32.dp),
+            )
+        }
+        if (hint != null && maxHeight >= 112.dp) {
+            Text(
+                text = hint,
+                color = colors.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(start = 30.dp, end = 30.dp, bottom = 20.dp),
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawTrackpadCorners(color: Color) {
+    val inset = 14.dp.toPx()
+    val length = 14.dp.toPx()
+    if (size.minDimension < 2 * (inset + length)) return
+    val stroke = 1.dp.toPx()
+
+    fun corner(x: Float, y: Float, dx: Float, dy: Float) {
+        val start = Offset(x, y)
+        drawLine(color, start, Offset(x + dx, y), stroke)
+        drawLine(color, start, Offset(x, y + dy), stroke)
+    }
+
+    corner(inset, inset, length, length)
+    corner(size.width - inset, inset, -length, length)
+    corner(inset, size.height - inset, length, -length)
+    corner(size.width - inset, size.height - inset, -length, -length)
 }

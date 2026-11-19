@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="board_trackpad_scroll">Прокрутка</string>
+    <string name="board_trackpad_scroll_hint">Ведите двумя пальцами</string>
+    <string name="board_trackpad_zoom">Масштаб</string>
+    <string name="board_trackpad_zoom_hint">Сведите или разведите пальцы</string>
+    <string name="board_trackpad_label">Тачпад доски</string>
+    <string name="board_trackpad_hold">Удержите палец и потяните.</string>
+    <string name="board_trackpad_edge">ЛКМ зажата. Ведите палец к краю.</string>
+</resources>

@@ -1,6 +1,7 @@
 package dev.pocketinput.ui.keyboard
 
 import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import androidx.compose.runtime.Composable
@@ -13,7 +14,7 @@ import androidx.compose.ui.platform.PlatformTextInputInterceptor
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun EmptyBackspaceInput(
+internal fun KeyboardEditorInput(
     canForward: () -> Boolean,
     onBackspaces: (Int) -> Unit,
     content: @Composable () -> Unit,
@@ -26,7 +27,7 @@ internal fun EmptyBackspaceInput(
             try {
                 next.startInputMethod { editorInfo ->
                     val connectionGeneration = ++generation
-                    EmptyBackspaceConnection(
+                    KeyboardEditorConnection(
                         target = request.createInputConnection(editorInfo),
                         canForward = { connectionGeneration == generation && currentCanForward() },
                         onBackspaces = { count -> currentOnBackspaces(count) },
@@ -40,7 +41,7 @@ internal fun EmptyBackspaceInput(
     InterceptPlatformTextInput(interceptor, content)
 }
 
-private class EmptyBackspaceConnection(
+private class KeyboardEditorConnection(
     target: InputConnection,
     canForward: () -> Boolean,
     onBackspaces: (Int) -> Unit,
@@ -78,6 +79,18 @@ private class EmptyBackspaceConnection(
 
     override fun endBatchEdit(): Boolean =
         super.endBatchEdit().also { if (!it) backspace.endBatch() }
+
+    override fun performEditorAction(actionCode: Int): Boolean {
+        if (actionCode != EditorInfo.IME_ACTION_SEND) return super.performEditorAction(actionCode)
+        if (!beginBatchEdit()) return false
+        return try {
+            // Enter follows pending IME edits and leaves the composed word in the buffer.
+            finishComposingText()
+            commitText("\n", 1)
+        } finally {
+            endBatchEdit()
+        }
+    }
 
     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
         backspace.otherEdit()

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workspace_title">Управление ПК</string>
+    <string name="workspace_input">Ввод</string>
+    <string name="workspace_board">Доска</string>
+    <string name="workspace_pc">ПК</string>
+    <string name="workspace_connected">%1$s · подключено</string>
+    <string name="workspace_menu">Подключение и настройки</string>
+    <string name="workspace_mini_pad">Мини-тачпад</string>
+    <string name="workspace_tap_click">Тап · клик</string>
+    <string name="kb_editor_prefix">На ПК</string>
+    <string name="kb_editor_placeholder">Введите текст</string>
+    <string name="kb_commands_title">Клавиши ПК</string>
+    <string name="kb_layout_title">Раскладка ПК</string>
+    <string name="kb_layout_check">Сверьте с индикатором Windows.</string>
+    <string name="kb_close_panel">Закрыть панель</string>
+    <string name="kb_win_space">Win + Пробел</string>
+    <string name="kb_all_symbols">Все знаки</string>
+</resources>

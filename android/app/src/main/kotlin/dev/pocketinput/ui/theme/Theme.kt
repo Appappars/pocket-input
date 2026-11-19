@@ -12,69 +12,65 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.pocketinput.data.SettingsState
 
-/**
- * Собственная тема фазы 1: холодный графит + бирюзовый акцент.
- * Тёмная схема объявлена явно (не дефолтная фиолетовая material3).
- *
- * @param theme "system" | "dark" | "light" из [SettingsState.theme].
- */
-private val Teal = Color(0xFF2ED3B7)
-private val TealLight = Color(0xFF0E8F7C)
-private val TealDark = Color(0xFF6BE8CE)
-
 private val DarkColors = darkColorScheme(
-    primary = TealDark,
-    onPrimary = Color(0xFF00352C),
-    primaryContainer = Color(0xFF10514A),
-    onPrimaryContainer = Color(0xFFB8F5E7),
-    secondary = Color(0xFF9AC7BE),
-    onSecondary = Color(0xFF0B3730),
-    secondaryContainer = Color(0xFF21322F),
-    onSecondaryContainer = Color(0xFFD3E8E3),
-    tertiary = Color(0xFFB6C6D4),
-    onTertiary = Color(0xFF1B2A34),
-    background = Color(0xFF0E1214),
-    onBackground = Color(0xFFE2E8E6),
-    surface = Color(0xFF12181A),
-    onSurface = Color(0xFFE2E8E6),
-    surfaceVariant = Color(0xFF26302F),
-    onSurfaceVariant = Color(0xFFB2BFBC),
-    surfaceContainer = Color(0xFF161D1F),
-    outline = Color(0xFF6C7A78),
-    outlineVariant = Color(0xFF3A4644),
+    primary = Color(0xFFA9C8F8),
+    onPrimary = Color(0xFF132B4C),
+    primaryContainer = Color(0xFF28466C),
+    onPrimaryContainer = Color(0xFFD9E8FB),
+    secondary = Color(0xFFABC0D9),
+    onSecondary = Color(0xFF1D3046),
+    secondaryContainer = Color(0xFF2B3E55),
+    onSecondaryContainer = Color(0xFFE4EEF9),
+    tertiary = Color(0xFF80CDA2),
+    onTertiary = Color(0xFF163827),
+    background = Color(0xFF131C29),
+    onBackground = Color(0xFFE7EFF8),
+    surface = Color(0xFF1B2939),
+    onSurface = Color(0xFFE7EFF8),
+    surfaceVariant = Color(0xFF24354A),
+    onSurfaceVariant = Color(0xFFB5C9DF),
+    surfaceContainer = Color(0xFF26384E),
+    surfaceContainerHigh = Color(0xFF2A3C52),
+    outline = Color(0xFF92A8C0),
+    outlineVariant = Color(0xFF667F9A),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
+    errorContainer = Color(0xFF642D23),
+    onErrorContainer = Color(0xFFFFDBD0),
 )
 
 private val LightColors = lightColorScheme(
-    primary = TealLight,
+    primary = Color(0xFF214F96),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFB8F5E7),
-    onPrimaryContainer = Color(0xFF00201B),
-    secondary = Color(0xFF4A635E),
+    primaryContainer = Color(0xFFD4E3F8),
+    onPrimaryContainer = Color(0xFF152E52),
+    secondary = Color(0xFF405B75),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFCDE8E1),
-    onSecondaryContainer = Color(0xFF06201B),
-    tertiary = Color(0xFF435C6B),
+    secondaryContainer = Color(0xFFE2EAF4),
+    onSecondaryContainer = Color(0xFF12263D),
+    tertiary = Color(0xFF2B7955),
     onTertiary = Color.White,
-    background = Color(0xFFF6FAF9),
-    onBackground = Color(0xFF171D1C),
-    surface = Color(0xFFFBFDFC),
-    onSurface = Color(0xFF171D1C),
-    surfaceVariant = Color(0xFFDBE5E2),
-    onSurfaceVariant = Color(0xFF3F4947),
-    surfaceContainer = Color(0xFFEDF3F1),
-    outline = Color(0xFF6F7977),
-    outlineVariant = Color(0xFFBEC9C6),
-    error = Color(0xFFBA1A1A),
+    background = Color(0xFFEDF2F7),
+    onBackground = Color(0xFF12263D),
+    surface = Color(0xFFFDFEFF),
+    onSurface = Color(0xFF12263D),
+    surfaceVariant = Color(0xFFDDE7F1),
+    onSurfaceVariant = Color(0xFF405B75),
+    surfaceContainer = Color(0xFFE2EAF4),
+    surfaceContainerHigh = Color(0xFFD9E4F0),
+    outline = Color(0xFF596E87),
+    outlineVariant = Color(0xFF72869F),
+    error = Color(0xFF963A25),
     onError = Color.White,
+    errorContainer = Color(0xFFF8E0D5),
+    onErrorContainer = Color(0xFF532218),
 )
 
 /** Тело текста чуть крупнее дефолта — читаемость на телефоне, который держат одной рукой. */
 private val PocketTypography = Typography().let { base ->
     base.copy(
         headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-        titleLarge = base.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
+        titleLarge = base.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold),
         titleMedium = base.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Medium),
         bodyLarge = base.bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp),
         bodyMedium = base.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp),

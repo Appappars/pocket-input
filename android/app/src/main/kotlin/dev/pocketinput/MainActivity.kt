@@ -16,15 +16,21 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import dev.pocketinput.data.SettingsState
 import dev.pocketinput.data.SettingsStore
 import dev.pocketinput.hid.HidTransport
@@ -38,6 +44,7 @@ import dev.pocketinput.ui.link.DiagnosticsScreen
 import dev.pocketinput.ui.settings.SettingsScreen
 import dev.pocketinput.ui.theme.PocketInputTheme
 import dev.pocketinput.ui.trackpad.TrackpadScreen
+import dev.pocketinput.ui.workspace.ControlWorkspace
 
 class MainActivity : ComponentActivity() {
     private enum class Screen { CONNECT, TRACKPAD, KEYBOARD, SETTINGS, DIAGNOSTICS }
@@ -88,10 +95,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             var settings by remember { mutableStateOf(store.load()) }
             var screenName by rememberSaveable { mutableStateOf(Screen.CONNECT.name) }
-            var controlScreenName by rememberSaveable { mutableStateOf(Screen.TRACKPAD.name) }
-            var restoringConnection by rememberSaveable { mutableStateOf(false) }
+            var controlScreenName by rememberSaveable { mutableStateOf(Screen.KEYBOARD.name) }
+            var connectionFromDiagnostics by rememberSaveable { mutableStateOf(false) }
             val screen = Screen.valueOf(screenName)
             val controlScreen = Screen.valueOf(controlScreenName)
+            val ime = LocalSoftwareKeyboardController.current
             val transport = service?.transport
             val link = when {
                 !permissionGranted -> LinkSnapshot(state = LinkState.NEEDS_PERMISSION)
@@ -100,6 +108,9 @@ class MainActivity : ComponentActivity() {
                 servicePaused -> LinkSnapshot(state = LinkState.STOPPED)
                 else -> LinkSnapshot(state = LinkState.INIT)
             }
+            val connected = link.isConnected && link.sessionId != 0L
+            val controls = screen == Screen.TRACKPAD || screen == Screen.KEYBOARD
+            val showConnection = screen == Screen.CONNECT || transport == null || (controls && !connected)
 
             fun apply(next: SettingsState) {
                 settings = next
@@ -107,33 +118,53 @@ class MainActivity : ComponentActivity() {
             }
 
             fun goTo(target: Screen) {
+                if (target == screen) return
+                if (screen == Screen.KEYBOARD) ime?.hide()
                 if (target == Screen.TRACKPAD || target == Screen.KEYBOARD) {
                     controlScreenName = target.name
                 }
-                restoringConnection = target == Screen.CONNECT
+                connectionFromDiagnostics = target == Screen.CONNECT && screen == Screen.DIAGNOSTICS
                 screenName = target.name
             }
 
-            BackHandler(enabled = screen == Screen.DIAGNOSTICS ||
-                screen == Screen.SETTINGS || screen == Screen.KEYBOARD ||
-                (screen == Screen.CONNECT && restoringConnection)) {
+            LaunchedEffect(showConnection) {
+                if (showConnection) ime?.hide()
+            }
+
+            BackHandler(
+                enabled = (showConnection && connectionFromDiagnostics) ||
+                    (!showConnection && screen != Screen.TRACKPAD),
+            ) {
                 goTo(
-                    if (screen == Screen.DIAGNOSTICS || screen == Screen.CONNECT) controlScreen
-                    else Screen.TRACKPAD,
+                    when {
+                        showConnection -> Screen.DIAGNOSTICS
+                        screen == Screen.KEYBOARD -> Screen.TRACKPAD
+                        else -> controlScreen
+                    },
                 )
             }
 
             PocketInputTheme(theme = settings.theme) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    if (screen == Screen.CONNECT || transport == null) {
+                val background = MaterialTheme.colorScheme.background
+                LaunchedEffect(background) {
+                    window.statusBarColor = background.toArgb()
+                    window.navigationBarColor = background.toArgb()
+                    val light = background.luminance() > 0.5f
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = light
+                        isAppearanceLightNavigationBars = light
+                    }
+                }
+                Surface(modifier = Modifier.fillMaxSize(), color = background) {
+                    if (showConnection) {
                         ConnectScreen(
                             link = link,
                             permissionSettingsRequired = permissionSettingsRequired,
                             onRequestPermission = ::requestBluetoothPermission,
                             onOpenBluetoothSettings = { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
                             onRetry = ::retryConnection,
-                            onConnected = { goTo(controlScreen) },
-                            onBack = if (restoringConnection) ({ goTo(controlScreen) }) else null,
+                            onConnected = { if (connected) goTo(controlScreen) },
+                            onBack = if (connectionFromDiagnostics) ({ goTo(Screen.DIAGNOSTICS) }) else null,
                             onStopSession = if (transport != null &&
                                 link.state != LinkState.STOPPED && link.state != LinkState.NEEDS_PERMISSION &&
                                 link.cause != LinkCause.SERVICE_FAILED
@@ -141,23 +172,23 @@ class MainActivity : ComponentActivity() {
                         )
                     } else {
                         when (screen) {
-                            Screen.TRACKPAD -> TrackpadScreen(
-                                transport = transport,
-                                settings = settings,
-                                onOpenKeyboard = { goTo(Screen.KEYBOARD) },
+                            Screen.KEYBOARD, Screen.TRACKPAD -> ControlWorkspace(
+                                link = link,
+                                inputSelected = screen == Screen.KEYBOARD,
+                                onSelectInput = { input -> goTo(if (input) Screen.KEYBOARD else Screen.TRACKPAD) },
                                 onOpenSettings = { goTo(Screen.SETTINGS) },
                                 onOpenDiagnostics = { goTo(Screen.DIAGNOSTICS) },
-                                onOpenConnection = { goTo(Screen.CONNECT) },
-                            )
-
-                            Screen.KEYBOARD -> KeyboardScreen(
-                                transport = transport,
-                                settings = settings,
-                                onLayoutChange = { layout -> apply(settings.copy(layout = layout)) },
-                                onBack = { goTo(Screen.TRACKPAD) },
-                                onOpenDiagnostics = { goTo(Screen.DIAGNOSTICS) },
-                                onOpenConnection = { goTo(Screen.CONNECT) },
-                            )
+                            ) {
+                                if (screen == Screen.KEYBOARD) {
+                                    KeyboardScreen(
+                                        transport = transport,
+                                        settings = settings,
+                                        onLayoutChange = { layout -> apply(settings.copy(layout = layout)) },
+                                    )
+                                } else {
+                                    TrackpadScreen(transport = transport, settings = settings)
+                                }
+                            }
 
                             Screen.DIAGNOSTICS -> DiagnosticsScreen(
                                 transport = transport,
@@ -170,7 +201,7 @@ class MainActivity : ComponentActivity() {
                             Screen.SETTINGS -> SettingsScreen(
                                 state = settings,
                                 onChange = { next -> apply(next) },
-                                onBack = { goTo(Screen.TRACKPAD) },
+                                onBack = { goTo(controlScreen) },
                             )
 
                             Screen.CONNECT -> Unit

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workspace_title">PC control</string>
+    <string name="workspace_input">Input</string>
+    <string name="workspace_board">Board</string>
+    <string name="workspace_pc">PC</string>
+    <string name="workspace_connected">%1$s · connected</string>
+    <string name="workspace_menu">Connection and settings</string>
+    <string name="workspace_mini_pad">Mini trackpad</string>
+    <string name="workspace_tap_click">Tap to click</string>
+    <string name="kb_editor_prefix">To PC</string>
+    <string name="kb_editor_placeholder">Enter text</string>
+    <string name="kb_commands_title">PC keys</string>
+    <string name="kb_layout_title">PC layout</string>
+    <string name="kb_layout_check">Match the layout shown on Windows.</string>
+    <string name="kb_close_panel">Close panel</string>
+    <string name="kb_win_space">Win + Space</string>
+    <string name="kb_all_symbols">All symbols</string>
+</resources>

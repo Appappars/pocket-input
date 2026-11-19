@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Фаза 0: базовая тема без зависимостей от внешних библиотек. -->
-    <style name="Theme.PocketInput" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.PocketInput" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#EDF2F7</item>
+        <item name="android:statusBarColor">#EDF2F7</item>
+        <item name="android:navigationBarColor">#EDF2F7</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
 </resources>

@@ -1,0 +1,9 @@
+<resources>
+    <string name="board_connection_peer_status">%1$s · %2$s</string>
+    <string name="board_connection_pc_unavailable">ПК недоступен</string>
+    <string name="board_connection_pc_not_responding">ПК не отвечает</string>
+    <string name="board_connection_check_pc">Убедитесь, что ПК включён и Bluetooth доступен.</string>
+    <string name="board_connection_retry">Повторить подключение</string>
+    <string name="board_connection_bluetooth_settings">Настройки Bluetooth</string>
+    <string name="board_connection_resume">После подключения вернётся прежний режим.</string>
+</resources>

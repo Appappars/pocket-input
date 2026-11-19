@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="board_trackpad_scroll">Scroll</string>
+    <string name="board_trackpad_scroll_hint">Move two fingers</string>
+    <string name="board_trackpad_zoom">Zoom</string>
+    <string name="board_trackpad_zoom_hint">Pinch in or out</string>
+    <string name="board_trackpad_label">Board touchpad</string>
+    <string name="board_trackpad_hold">Hold and move to drag.</string>
+    <string name="board_trackpad_edge">Left button held. Move your finger to the edge.</string>
+</resources>

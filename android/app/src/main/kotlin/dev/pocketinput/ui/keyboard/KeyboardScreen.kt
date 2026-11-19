@@ -1,29 +1,34 @@
 package dev.pocketinput.ui.keyboard
 
 import android.view.inputmethod.InputMethodManager
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,15 +41,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
@@ -53,25 +64,22 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import dev.pocketinput.R
 import dev.pocketinput.data.SettingsState
 import dev.pocketinput.hid.HidTransport
 import dev.pocketinput.hid.LinkState
-import dev.pocketinput.ui.link.LinkStatusBar
 import dev.pocketinput.ui.trackpad.TrackpadSurface
 import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun KeyboardScreen(
+internal fun KeyboardScreen(
     transport: HidTransport,
     settings: SettingsState,
     onLayoutChange: (String) -> Unit,
-    onBack: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
-    onOpenConnection: () -> Unit,
 ) {
     val link = transport.link
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -99,18 +107,16 @@ fun KeyboardScreen(
     }
     var skipped by remember(transport, sessionId, editRevision) { mutableIntStateOf(0) }
     var queueRejected by remember(transport, sessionId, editRevision) { mutableStateOf(false) }
-    var layoutMenu by remember(transport, sessionId) { mutableStateOf(false) }
-    var symbolMenu by remember(transport, sessionId) { mutableStateOf(false) }
-    var specialKeysMenu by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf(false) }
-    var restoreImeOnDismiss by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf(false) }
+    var panel by remember(transport, sessionId, editRevision, editorRevision) {
+        mutableStateOf<KeyboardPanel?>(null)
+    }
+    var openIme by remember(transport, sessionId) { mutableStateOf(editorActive) }
 
     val context = LocalContext.current
     val focus = remember { FocusRequester() }
     val ime = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.isImeVisible
     val window = LocalWindowInfo.current
-    var keyboardRequest by remember(transport, sessionId) { mutableIntStateOf(if (editorActive) 1 else 0) }
-    var appliedKeyboardRequest by remember(transport, sessionId) { mutableIntStateOf(0) }
 
     LaunchedEffect(editorActive) {
         if (!editorActive) ime?.hide()
@@ -153,6 +159,7 @@ fun KeyboardScreen(
     fun resetEditor() {
         if (revision != editorRevision) return
         skipped = 0
+        openIme = openIme || imeVisible
         revision++
     }
 
@@ -163,241 +170,226 @@ fun KeyboardScreen(
         onLayoutChange(if (russian) "ru" else "en")
     }
 
-    fun insertSymbol(symbol: Char) {
+    fun insertAtSelection(text: String) {
         val range = field.selection
-        val cursor = range.min + 1
-        handleChange(TextFieldValue(
-            text = field.text.replaceRange(range.min, range.max, symbol.toString()),
-            selection = TextRange(cursor),
-        ))
+        handleChange(
+            TextFieldValue(
+                text = field.text.replaceRange(range.min, range.max, text),
+                selection = TextRange(range.min + text.length),
+            ),
+        )
     }
 
-    fun openSpecialKeys() {
-        if (!isCurrentEditor()) return
-        layoutMenu = false
-        symbolMenu = false
-        restoreImeOnDismiss = imeVisible
-        specialKeysMenu = true
+    fun openPanel(target: KeyboardPanel) {
+        if (isCurrentEditor()) panel = target
     }
 
-    fun dismissSpecialKeys() {
-        if (!specialKeysMenu) return
-        specialKeysMenu = false
-        if (restoreImeOnDismiss) keyboardRequest++
-        restoreImeOnDismiss = false
-    }
+    if (!editorActive) return
+    val visiblePanel = panel
+    BackHandler(enabled = visiblePanel != null) { panel = null }
 
-    fun sendSpecialKey(usage: Int) {
-        if (!specialKeysMenu) return
-        dismissSpecialKeys()
-        if (submitKeys(listOf(usage to 0))) resetEditor()
+    val inputStatus = when {
+        queueRejected -> R.string.kb_input_queue_rejected
+        link.keyboardFailureRevision == editRevision -> R.string.kb_input_send_failed
+        skipped > 0 -> R.string.kb_input_skipped
+        else -> null
     }
+    val layoutLabel = stringResource(R.string.kb_pc_layout, if (russianLayout) "RU" else "EN")
+    val keysLabel = stringResource(R.string.kb_special_keys)
+    val density = LocalDensity.current
+    var editorHeightPx by remember { mutableIntStateOf(0) }
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    ) {
-        val compact = editorActive && maxHeight < 220.dp
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (!compact) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        onClick = onBack,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val compact = maxHeight < 216.dp || maxWidth < 304.dp || density.fontScale > 1.25f
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp),
+        ) {
+            key(transport, sessionId, editRevision, editorRevision) {
+                var editorFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().onSizeChanged { editorHeightPx = it.height },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    KeyboardEditorInput(
+                        canForward = {
+                            isCurrentEditor() && editorFocused && window.isWindowFocused &&
+                                field.text.isEmpty() && field.composition == null && queuedText.isEmpty()
+                        },
+                        onBackspaces = { count -> submitKeys(List(count) { Usages.BACKSPACE to 0 }) },
                     ) {
-                        Text(stringResource(R.string.back), style = MaterialTheme.typography.labelLarge)
-                    }
-                    Text(
-                        text = stringResource(R.string.keyboard_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                        textAlign = if (editorActive) TextAlign.Center else TextAlign.End,
-                    )
-                    if (editorActive) {
-                        SpecialKeysMenu(
-                            expanded = specialKeysMenu,
-                            onOpen = ::openSpecialKeys,
-                            onDismiss = ::dismissSpecialKeys,
-                            onKey = ::sendSpecialKey,
+                        CompactEditor(
+                            value = field,
+                            onValueChange = ::handleChange,
+                            onEnter = { insertAtSelection("\n") },
+                            focused = editorFocused,
+                            modifier = Modifier.weight(1f)
+                                .focusRequester(focus)
+                                .onFocusChanged { editorFocused = it.isFocused },
                         )
                     }
+                    if (compact) {
+                        InputAction(keysLabel, onClick = { openPanel(KeyboardPanel.KEYS) })
+                    }
                 }
-
-                LinkStatusBar(
-                    link = link,
-                    onClick = {
-                        if (transport.link.state == LinkState.CONNECTED) onOpenDiagnostics() else onOpenConnection()
-                    },
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
+                LaunchedEffect(Unit) {
+                    if (openIme || imeVisible) {
+                        snapshotFlow { window.isWindowFocused }.first { it }
+                        openIme = false
+                        focus.requestFocus()
+                        ime?.show()
+                    }
+                }
             }
 
-            if (editorActive) {
-                key(transport, sessionId, editRevision, editorRevision) {
-                    var editorFocused by remember { mutableStateOf(false) }
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                        EmptyBackspaceInput(
-                            canForward = {
-                                isCurrentEditor() && editorFocused && window.isWindowFocused &&
-                                    field.text.isEmpty() && field.composition == null && queuedText.isEmpty()
-                            },
-                            onBackspaces = { count -> submitKeys(List(count) { Usages.BACKSPACE to 0 }) },
-                        ) {
-                            OutlinedTextField(
-                                value = field,
-                                onValueChange = ::handleChange,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(focus)
-                                    .onFocusChanged { editorFocused = it.isFocused },
-                                label = { Text(stringResource(R.string.kb_editor)) },
-                                maxLines = if (compact) 1 else 2,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false,
-                                    imeAction = ImeAction.None,
-                                ),
-                            )
-                        }
-                        if (compact) {
-                            SpecialKeysMenu(
-                                expanded = specialKeysMenu,
-                                onOpen = ::openSpecialKeys,
-                                onDismiss = ::dismissSpecialKeys,
-                                onKey = ::sendSpecialKey,
-                                modifier = Modifier.padding(start = 4.dp, top = 6.dp),
-                            )
-                        }
-                    }
-                    LaunchedEffect(keyboardRequest) {
-                        if (keyboardRequest != appliedKeyboardRequest || imeVisible) {
-                            snapshotFlow { window.isWindowFocused }.first { it }
-                            appliedKeyboardRequest = keyboardRequest
-                            focus.requestFocus()
-                            ime?.show()
-                        }
+            if (visiblePanel == null) {
+                if (!compact) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        InputAction(layoutLabel, { openPanel(KeyboardPanel.LAYOUT) }, Modifier.weight(1.05f))
+                        InputAction(
+                            stringResource(R.string.kb_symbols),
+                            { openPanel(KeyboardPanel.SYMBOLS) },
+                            Modifier.weight(0.8f),
+                        )
+                        InputAction(keysLabel, { openPanel(KeyboardPanel.KEYS) }, Modifier.weight(1.25f))
                     }
                 }
-            } else if (!connected) {
-                Text(stringResource(R.string.kb_connection_hint), style = MaterialTheme.typography.labelSmall)
-            }
-
-            TrackpadSurface(
-                transport = transport,
-                settings = settings,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                onFocusChangingInput = {
-                    if (field.text.isNotEmpty() || field.composition != null) resetEditor()
-                },
-            )
-
-            if (editorActive) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        TextButton(onClick = { layoutMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.kb_pc_layout, if (russianLayout) "RU" else "EN"))
-                        }
-                        DropdownMenu(expanded = layoutMenu, onDismissRequest = { layoutMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.kb_switch_windows_layout)) },
-                                onClick = {
-                                    layoutMenu = false
-                                    if (submitKeys(listOf(Usages.SPACE to CharMap.LGUI))) selectLayout(!russianLayout)
-                                },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.kb_windows_now_en)) },
-                                onClick = {
-                                    layoutMenu = false
-                                    selectLayout(false)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.kb_windows_now_ru)) },
-                                onClick = {
-                                    layoutMenu = false
-                                    selectLayout(true)
-                                },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.kb_android_keyboard)) },
-                                onClick = {
-                                    layoutMenu = false
-                                    context.getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
-                                },
-                            )
-                        }
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        TextButton(onClick = { symbolMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.kb_symbols))
-                        }
-                        DropdownMenu(expanded = symbolMenu, onDismissRequest = { symbolMenu = false }) {
-                            FlowRow(
-                                modifier = Modifier.width(256.dp).padding(horizontal = 8.dp),
-                                maxItemsInEachRow = 5,
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                for (symbol in CharMap.symbols(russianLayout)) {
-                                    TextButton(
-                                        modifier = Modifier.width(48.dp),
-                                        contentPadding = PaddingValues(0.dp),
-                                        onClick = {
-                                            symbolMenu = false
-                                            insertSymbol(symbol)
-                                        },
-                                    ) {
-                                        Text(symbol.toString())
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                val status = when {
-                    queueRejected -> R.string.kb_input_queue_rejected
-                    link.keyboardFailureRevision == editRevision -> R.string.kb_input_send_failed
-                    skipped > 0 -> R.string.kb_input_skipped
-                    else -> null
-                }
-                if (status != null) {
+                if (inputStatus != null) {
                     Text(
-                        stringResource(status),
-                        style = MaterialTheme.typography.labelSmall,
+                        text = stringResource(inputStatus),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
+                TrackpadSurface(
+                    transport = transport,
+                    settings = settings,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    label = stringResource(R.string.workspace_mini_pad),
+                    hint = stringResource(R.string.workspace_tap_click),
+                    onFocusChangingInput = {
+                        if (field.text.isNotEmpty() || field.composition != null) resetEditor()
+                    },
+                )
+            }
+        }
+
+        if (visiblePanel != null) {
+            val inset = if (maxHeight < 260.dp) 0.dp else with(density) { editorHeightPx.toDp() } + 10.dp
+            val closeLabel = stringResource(R.string.kb_close_panel)
+            Box(modifier = Modifier.matchParentSize().padding(top = inset)) {
+                Box(
+                    modifier = Modifier.matchParentSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.16f))
+                        .clickable(onClickLabel = closeLabel) { panel = null },
+                )
+                KeyboardCommandPanel(
+                    panel = visiblePanel,
+                    russianLayout = russianLayout,
+                    compact = compact,
+                    onClose = { panel = null },
+                    onKey = { usage ->
+                        panel = null
+                        if (submitKeys(listOf(usage to 0))) resetEditor()
+                    },
+                    onSymbol = { symbol ->
+                        panel = null
+                        insertAtSelection(symbol.toString())
+                    },
+                    onAllSymbols = { openPanel(KeyboardPanel.SYMBOLS) },
+                    onLayout = { russian ->
+                        panel = null
+                        selectLayout(russian)
+                    },
+                    onSwitchLayout = {
+                        panel = null
+                        if (submitKeys(listOf(Usages.SPACE to CharMap.LGUI))) selectLayout(!russianLayout)
+                    },
+                    onChooseIme = {
+                        panel = null
+                        context.getSystemService(InputMethodManager::class.java)?.showInputMethodPicker()
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SpecialKeysMenu(
-    expanded: Boolean,
-    onOpen: () -> Unit,
-    onDismiss: () -> Unit,
-    onKey: (Int) -> Unit,
+private fun CompactEditor(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    onEnter: () -> Unit,
+    focused: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier) {
-        TextButton(onClick = onOpen) { Text(stringResource(R.string.kb_special_keys)) }
-        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.kb_tab_on_pc)) },
-                onClick = { onKey(Usages.TAB) },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.kb_escape_on_pc)) },
-                onClick = { onKey(Usages.ESC) },
-            )
-        }
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val accessibleName = stringResource(R.string.kb_editor)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.semantics { contentDescription = accessibleName },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface, fontSize = 19.sp),
+        cursorBrush = SolidColor(colors.primary),
+        keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.None,
+            autoCorrectEnabled = false,
+            imeAction = ImeAction.Send,
+        ),
+        keyboardActions = KeyboardActions(onSend = { onEnter() }),
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .clip(shape)
+                    .background(colors.surface)
+                    .border(1.dp, if (focused) colors.primary else colors.outlineVariant, shape)
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.kb_editor_prefix),
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+                VerticalDivider(Modifier.height(24.dp), color = colors.outlineVariant)
+                Box(modifier = Modifier.weight(1f)) {
+                    if (value.text.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.kb_editor_placeholder),
+                            color = colors.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            modifier = Modifier.clearAndSetSemantics {},
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun InputAction(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, colors.outlineVariant),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = colors.surface,
+            contentColor = colors.onSurface,
+        ),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
     }
 }
 

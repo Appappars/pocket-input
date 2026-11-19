@@ -1,0 +1,9 @@
+<resources>
+    <string name="board_connection_peer_status">%1$s · %2$s</string>
+    <string name="board_connection_pc_unavailable">PC unavailable</string>
+    <string name="board_connection_pc_not_responding">The PC is not responding</string>
+    <string name="board_connection_check_pc">Make sure the PC is on and Bluetooth is available.</string>
+    <string name="board_connection_retry">Retry connection</string>
+    <string name="board_connection_bluetooth_settings">Bluetooth settings</string>
+    <string name="board_connection_resume">Your previous mode returns once the connection is restored.</string>
+</resources>
