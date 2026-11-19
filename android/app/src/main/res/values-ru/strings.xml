@@ -50,7 +50,6 @@
     <string name="kb_windows_layout">Выберите EN в Windows для латиницы или RU для кириллицы.</string>
     <string name="kb_connection_hint">Откройте подключение, чтобы продолжить ввод.</string>
     <string name="kb_show_keyboard">Показать клавиатуру</string>
-    <string name="kb_delete_on_pc">Backspace на ПК</string>
     <string name="kb_input_queued">Ввод поставлен в очередь.</string>
     <string name="kb_input_queue_rejected">Ввод не добавлен в очередь. Попробуйте набрать меньший фрагмент.</string>
     <string name="kb_input_send_failed">Ошибка отправки ввода. Проверьте текст на ПК.</string>

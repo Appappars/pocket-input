@@ -50,7 +50,6 @@
     <string name="kb_windows_layout">Use EN on Windows for Latin letters and RU for Cyrillic.</string>
     <string name="kb_connection_hint">Open connection settings to resume typing.</string>
     <string name="kb_show_keyboard">Show keyboard</string>
-    <string name="kb_delete_on_pc">Backspace on PC</string>
     <string name="kb_input_queued">Input queued for sending.</string>
     <string name="kb_input_queue_rejected">Input could not be queued. Try again with a shorter fragment.</string>
     <string name="kb_input_send_failed">Some input could not be sent. Check the text on your PC.</string>

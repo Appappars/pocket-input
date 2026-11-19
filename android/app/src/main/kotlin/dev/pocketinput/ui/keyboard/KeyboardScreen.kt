@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -235,19 +236,31 @@ fun KeyboardScreen(
 
             if (editorActive) {
                 key(transport, sessionId, editRevision, editorRevision) {
+                    var editorFocused by remember { mutableStateOf(false) }
                     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                        OutlinedTextField(
-                            value = field,
-                            onValueChange = ::handleChange,
-                            modifier = Modifier.weight(1f).focusRequester(focus),
-                            label = { Text(stringResource(R.string.kb_editor)) },
-                            maxLines = if (compact) 1 else 2,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.None,
-                                autoCorrectEnabled = false,
-                                imeAction = ImeAction.None,
-                            ),
-                        )
+                        EmptyBackspaceInput(
+                            canForward = {
+                                isCurrentEditor() && editorFocused && window.isWindowFocused &&
+                                    field.text.isEmpty() && field.composition == null && queuedText.isEmpty()
+                            },
+                            onBackspaces = { count -> submitKeys(List(count) { Usages.BACKSPACE to 0 }) },
+                        ) {
+                            OutlinedTextField(
+                                value = field,
+                                onValueChange = ::handleChange,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focus)
+                                    .onFocusChanged { editorFocused = it.isFocused },
+                                label = { Text(stringResource(R.string.kb_editor)) },
+                                maxLines = if (compact) 1 else 2,
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.None,
+                                    autoCorrectEnabled = false,
+                                    imeAction = ImeAction.None,
+                                ),
+                            )
+                        }
                         if (compact) {
                             SpecialKeysMenu(
                                 expanded = specialKeysMenu,
@@ -343,15 +356,6 @@ fun KeyboardScreen(
                                 }
                             }
                         }
-                    }
-                    TextButton(
-                        onClick = {
-                            if (submitKeys(listOf(Usages.BACKSPACE to 0))) resetEditor()
-                        },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 4.dp),
-                    ) {
-                        Text(stringResource(R.string.kb_delete_on_pc))
                     }
                 }
 

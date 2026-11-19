@@ -12,8 +12,8 @@ android {
         applicationId = "dev.pocketinput"
         minSdk = 28
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.3.5-gestures"
+        versionCode = 14
+        versionName = "0.3.6-phone-backspace"
     }
 
     buildTypes {
