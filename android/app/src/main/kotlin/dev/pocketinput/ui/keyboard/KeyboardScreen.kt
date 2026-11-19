@@ -32,6 +32,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -102,6 +103,8 @@ internal fun KeyboardScreen(
         mutableStateOf(TextFieldValue())
     }
     var queuedText by remember(transport, sessionId, editRevision, editorRevision) { mutableStateOf("") }
+    val imeText = remember(transport, sessionId, editRevision, editorRevision) { ImeTextRebase() }
+    var trimRevision by remember(imeText) { mutableIntStateOf(0) }
     var russianLayout by remember(transport, sessionId) {
         mutableStateOf(settings.layout.equals("ru", ignoreCase = true))
     }
@@ -142,7 +145,11 @@ internal fun KeyboardScreen(
         return accepted
     }
 
-    fun handleChange(value: TextFieldValue) {
+    fun handleChange(
+        value: TextFieldValue,
+        previousEditorText: String? = null,
+        prefixInIme: (Int) -> String = { length -> value.text.take(length) },
+    ) {
         if (!isCurrentEditor()) return
         if (value.text == field.text) {
             field = value
@@ -153,6 +160,9 @@ internal fun KeyboardScreen(
         queueRejected = false
         skipped = edit.skippedCharacters
         queuedText = edit.queuedText
+        if (edit.droppedPrefix != 0 || previousEditorText != null) {
+            trimRevision = imeText.discardPrefix(prefixInIme(edit.droppedPrefix), previousEditorText)
+        }
         field = value.withEditableTail(edit)
     }
 
@@ -171,13 +181,22 @@ internal fun KeyboardScreen(
     }
 
     fun insertAtSelection(text: String) {
-        val range = field.selection
+        val previous = field
+        val range = previous.selection
         handleChange(
             TextFieldValue(
-                text = field.text.replaceRange(range.min, range.max, text),
+                text = previous.text.replaceRange(range.min, range.max, text),
                 selection = TextRange(range.min + text.length),
             ),
-        )
+            previousEditorText = previous.text,
+        ) { length ->
+            val oldLength = if (length <= range.min) {
+                length
+            } else {
+                range.max + (length - range.min - text.length).coerceAtLeast(0)
+            }
+            previous.text.take(oldLength)
+        }
     }
 
     fun openPanel(target: KeyboardPanel) {
@@ -207,6 +226,7 @@ internal fun KeyboardScreen(
         ) {
             key(transport, sessionId, editRevision, editorRevision) {
                 var editorFocused by remember { mutableStateOf(false) }
+                val renderedTrimRevision = trimRevision
                 Row(
                     modifier = Modifier.fillMaxWidth().onSizeChanged { editorHeightPx = it.height },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -221,7 +241,10 @@ internal fun KeyboardScreen(
                     ) {
                         CompactEditor(
                             value = field,
-                            onValueChange = ::handleChange,
+                            onValueChange = { value ->
+                                imeText.editableValue(value)?.let { handleChange(it) }
+                            },
+                            onValueApplied = { imeText.onValueApplied(renderedTrimRevision) },
                             onEnter = { insertAtSelection("\n") },
                             focused = editorFocused,
                             modifier = Modifier.weight(1f)
@@ -321,6 +344,7 @@ internal fun KeyboardScreen(
 private fun CompactEditor(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
+    onValueApplied: () -> Unit,
     onEnter: () -> Unit,
     focused: Boolean,
     modifier: Modifier = Modifier,
@@ -342,6 +366,8 @@ private fun CompactEditor(
         ),
         keyboardActions = KeyboardActions(onSend = { onEnter() }),
         decorationBox = { innerTextField ->
+            // CoreTextField has installed the displayed value in its edit buffer.
+            SideEffect(onValueApplied)
             Row(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .clip(shape)
@@ -393,18 +419,4 @@ private fun InputAction(label: String, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
-internal fun TextFieldValue.withEditableTail(edit: KeyboardEdit): TextFieldValue {
-    if (edit.droppedPrefix == 0) return this
-
-    fun TextRange.inTail(): TextRange {
-        val start = (start - edit.droppedPrefix).coerceIn(0, edit.localText.length)
-        val end = (end - edit.droppedPrefix).coerceIn(0, edit.localText.length)
-        return TextRange(start, end)
-    }
-
-    return TextFieldValue(
-        text = edit.localText,
-        selection = selection.inTail(),
-        composition = composition?.inTail()?.takeUnless { it.collapsed },
-    )
-}
+internal fun TextFieldValue.withEditableTail(edit: KeyboardEdit): TextFieldValue = withoutPrefix(edit.droppedPrefix)
