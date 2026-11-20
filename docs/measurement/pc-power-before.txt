@@ -1,0 +1,46 @@
+﻿=== MSPower_DeviceEnable (все устройства с галочкой экономии энергии) ===
+ENABLED  PCI\VEN_1022&DEV_1649&SUBSYS_7E871462&REV_00\4&aa1c7e6&0&0241_0
+ENABLED  ACPI\AMDI0030\0_0
+disabled PCI\VEN_1022&DEV_15B8&SUBSYS_7E871462&REV_00\4&30152930&0&0043_0
+disabled PCI\VEN_1022&DEV_15B6&SUBSYS_7E871462&REV_00\4&aa1c7e6&0&0341_0
+disabled PCI\VEN_1022&DEV_15B7&SUBSYS_7E871462&REV_00\4&aa1c7e6&0&0441_0
+disabled PCI\VEN_1022&DEV_43FC&SUBSYS_11421B21&REV_01\6&cbab7a5&0&00600011_0
+disabled USB\ROOT_HUB30\5&1e634d9c&0&0_0
+ENABLED  USB\ROOT_HUB30\5&26e72d53&0&0_0
+disabled USB\ROOT_HUB30\5&3395f46a&0&0_0
+disabled USB\ROOT_HUB30\7&1323753e&0&0_0
+ENABLED  PCI\VEN_10EC&DEV_818B&SUBSYS_819610EC&REV_00\019181FEFF4CE00000_0
+ENABLED  USB\VID_0DB0&PID_0076\7E8725042801_0
+ENABLED  USB\VID_10C4&PID_EA60\0001_0
+ENABLED  USB\VID_05E3&PID_0620\6&81c5ee6&0&4_0
+disabled USB\VID_05E3&PID_0610\6&81c5ee6&0&2_0
+ENABLED  USB\VID_4E53&PID_5406&MI_00\9&36d75061&0&0000_0
+ENABLED  USB\VID_4E53&PID_5406&MI_01\9&36d75061&0&0001_0
+ENABLED  USB\VID_046D&PID_C31C&MI_00\7&21d3c279&0&0000_0
+ENABLED  USB\VID_046D&PID_C31C&MI_01\7&21d3c279&0&0001_0
+ENABLED  {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd\7&1c6db6dd&0&11_0
+ENABLED  {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd\7&1c6db6dd&0&12_0
+ENABLED  BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&000100e0_PID&0000\9&ee6caf0&0&E441D4F01FD6_C00000000_0
+
+=== USB selective suspend (текущие значения) ===
+GUID схемы питания: 381b4222-f694-41f0-9685-ff5bb260df2e  (Сбалансированная)
+  Псевдоним GUID: SCHEME_BALANCED
+  GUID подгруппы: 2a737441-1930-4402-8d77-b2bebba308a3  (Параметры USB)
+    GUID настройки питания: 48e6b7a6-50f5-4782-a5d4-53bb8f07e226  (Параметр временного отключения USB-порта)
+      Индекс возможной настройки: 000
+      Понятное имя возможной настройки: Запрещено
+      Индекс возможной настройки: 001
+      Понятное имя возможной настройки: Разрешено
+    Текущий индекс настройки питания от сети: 0x00000001
+    Текущий индекс настройки питания от батарей: 0x00000001
+
+
+=== Bluetooth-подгруппы в схеме (если есть) ===
+
+>   GUID подгруппы: 2a737441-1930-4402-8d77-b2bebba308a3  (Параметры USB)
+>     GUID настройки питания: 48e6b7a6-50f5-4782-a5d4-53bb8f07e226  (Параметр временного отключения USB-порта)
+        Индекс возможной настройки: 000
+        Понятное имя возможной настройки: Запрещено
+
+
+

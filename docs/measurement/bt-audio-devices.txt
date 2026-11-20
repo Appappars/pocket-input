@@ -1,0 +1,5 @@
+﻿=== audio over this Bluetooth radio (A2DP/eSCO devices) ===
+AUDIO: vivo X200 Pro mini Hands-Free HF Audio
+
+=== paired BT devices total ===
+12

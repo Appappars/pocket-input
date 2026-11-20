@@ -1,0 +1,25 @@
+﻿=== Bluetooth / HID устройства (InstanceId) ===
+Unknown | HIDClass | HID-совместимый системный контроллер | HID\VID_046D&PID_C31C&MI_01&COL02\8&1579A04A&0&0001
+OK | Bluetooth | vivo X200 Pro mini | BTHENUM\DEV_E441D4F01FD6\9&EE6CAF0&0&BLUETOOTHDEVICE_E441D4F01FD6
+OK | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_4E53&PID_5406&MI_01&COL02\A&2D769CEB&0&0001
+OK | Bluetooth | Realtek Bluetooth 6.0 Adapter | USB\VID_0BDA&PID_A760\00E04C239987
+OK | HIDClass | HID-совместимое устройство управления | HID\VID_046D&PID_C31C&MI_01&COL01\8&34C9359E&0&0000
+Unknown | HIDClass | HID-совместимое устройство управления | HID\VID_046D&PID_C31C&MI_01&COL03\8&1579A04A&0&0002
+Unknown | HIDClass | HID-совместимое устройство управления | HID\VID_1C4F&PID_0016&MI_01&COL01\8&1B80849A&0&0000
+OK | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_4E53&PID_5406&MI_01&COL03\A&2D769CEB&0&0002
+OK | HIDClass | HID-совместимый системный контроллер | HID\VID_046D&PID_C31C&MI_01&COL02\8&34C9359E&0&0001
+OK | Bluetooth | Транспорт AVRCP vivo X200 Pro mini | BTHENUM\{0000110C-0000-1000-8000-00805F9B34FB}_VID&000100E0_PID&0000\9&EE6CAF0&0&E441D4F01FD6_C00000000
+OK | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_0DB0&PID_0076\9&1E053C3A&0&0000
+Unknown | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_046D&PID_C31C&MI_01&COL04\8&1579A04A&0&0003
+Unknown | HIDClass | HID-совместимый системный контроллер | HID\VID_1C4F&PID_0016&MI_01&COL02\8&1B80849A&0&0001
+OK | HIDClass | HID-совместимое устройство управления | HID\VID_046D&PID_C31C&MI_01&COL03\8&34C9359E&0&0002
+OK | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_046D&PID_C31C&MI_01&COL04\8&34C9359E&0&0003
+OK | HIDClass | Bluetooth HID-устройство | BTHENUM\{00001124-0000-1000-8000-00805F9B34FB}_VID&000100E0_PID&0000\9&EE6CAF0&0&E441D4F01FD6_C00000000
+OK | HIDClass | HID-совместимое устройство управления | HID\VID_4E53&PID_5406&MI_00&COL02\A&99F5F29&0&0001
+Unknown | HIDClass | HID-совместимое устройство управления | HID\VID_046D&PID_C31C&MI_01&COL01\8&1579A04A&0&0000
+OK | HIDClass | HID-совместимое устройство, определенное поставщиком | HID\VID_4E53&PID_5406&MI_01&COL01\A&2D769CEB&0&0000
+OK | Bluetooth | Транспорт AVRCP vivo X200 Pro mini | BTHENUM\{0000110E-0000-1000-8000-00805F9B34FB}_VID&000100E0_PID&0000\9&EE6CAF0&0&E441D4F01FD6_C00000000
+
+=== кто из них под управлением питания ===
+Enable=True  USB\VID_0DB0&PID_0076\7E8725042801_0
+Enable=True  BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&000100e0_PID&0000\9&ee6caf0&0&E441D4F01FD6_C00000000_0
