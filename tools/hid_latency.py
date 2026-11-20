@@ -227,7 +227,11 @@ def read_input(lparam) -> tuple[str, int, int, int, str] | None:
     )
     if got == 0xFFFFFFFF or size.value == 0:
         return None
-    buf = ctypes.create_string_buffer(size.value)
+    # Клавиатурный пакет RAWINPUT занимает 40 байт, мышиный — 48 (24 header + 24 mouse).
+    # Буфер выделяем под максимум из двух, иначе from_buffer_copy падает на клавиатуре:
+    # исключение внутри WNDPROC глушится и событие просто теряется.
+    alloc = max(int(size.value), ctypes.sizeof(RAWINPUT))
+    buf = ctypes.create_string_buffer(alloc)
     if (
         user32.GetRawInputData(
             wintypes.HANDLE(lparam), RID_INPUT, buf, ctypes.byref(size), ctypes.sizeof(RAWINPUTHEADER)
@@ -259,6 +263,17 @@ def selftest() -> int:
     parsed = parse_raw(buf)
     print(f"разбор синтетического пакета: {parsed}")
     ok = parsed == ("mouse", 17, -9, 0)
+
+    # Клавиатурный пакет короче мышиного (40 байт) — на нём парсер раньше падал.
+    kb_size = ctypes.sizeof(RAWINPUTHEADER) + ctypes.sizeof(KEYBOARD_BODY)
+    raw2 = RAWINPUT()
+    raw2.header.dwType = RIM_TYPEKEYBOARD
+    raw2.header.dwSize = kb_size
+    raw2.body.keyboard.VKey = 0x41
+    buf2 = ctypes.string_at(ctypes.byref(raw2), kb_size)
+    parsed2 = parse_raw(ctypes.create_string_buffer(buf2, ctypes.sizeof(RAWINPUT)))
+    print(f"клавиатурный пакет {kb_size} байт: {parsed2}")
+    ok = ok and parsed2 == ("keyboard", 0, 0, 0)
     print("selftest:", "ок" if ok else "ПРОВАЛ")
     return 0 if ok else 1
 
@@ -327,6 +342,7 @@ def summarize(device: str, frames: list[Frame], longest_idle_gap: int | None) ->
 
 def run(seconds: float, only: str | None, csv_path: str | None) -> int:
     frames: list[Frame] = []
+    bad = [0]
     last_by_device: dict[str, int] = {}
     idle_gaps: dict[str, int] = {}
 
@@ -336,7 +352,13 @@ def run(seconds: float, only: str | None, csv_path: str | None) -> int:
 
     def wndproc(hwnd, msg, wparam, lparam):
         if msg == WM_INPUT:
-            parsed = read_input(lparam)
+            try:
+                parsed = read_input(lparam)
+            except Exception as exc:  # noqa: BLE001 - диагностика важнее падения цикла
+                bad[0] += 1
+                if bad[0] == 1:
+                    print(f"! ошибка разбора RAWINPUT: {exc}")
+                return 0
             t = int(user32.GetMessageTime())
             if parsed:
                 kind, dx, dy, flags, name = parsed
@@ -381,6 +403,8 @@ def run(seconds: float, only: str | None, csv_path: str | None) -> int:
     for f in frames:
         by_device.setdefault(f.device, []).append(f)
 
+    if bad[0]:
+        print(f"! не удалось разобрать {bad[0]} пакетов RAWINPUT")
     if not by_device:
         print("Событий не пришло. Проверь, что телефон подключён как HID и курсор двигался.")
         return 2
