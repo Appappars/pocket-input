@@ -44,6 +44,7 @@ TARGET_MEDIAN_MS = 12.0
 TARGET_P95_MS = 35.0
 TARGET_WAKE_MS = 60.0
 STALL_MS = 50
+PAUSE_MS = 1000  # интервал больше этого — остановка руки, а не столл канала
 
 
 class RAWINPUTDEVICE(ctypes.Structure):
@@ -284,10 +285,13 @@ def summarize(device: str, frames: list[Frame], longest_idle_gap: int | None) ->
     moves = [f for f in mouse if f.dx or f.dy]
     times = [f.t_ms for f in moves]
     gaps = [b - a for a, b in zip(times, times[1:]) if b > a]
-    # Провалы > 50 мс — или пробуждение из sniff, или забитый канал; в медиане их нет.
-    stalls = [g for g in gaps if g > STALL_MS]
+    # Паузы > 1 с — это рука остановилась, а не канал: в статистику провалов они не идут,
+    # иначе тест «поводи, сделай паузу, поводи» всегда «доказывает» пробуждение из сна.
+    pauses = [g for g in gaps if g > PAUSE_MS]
+    stalls = [g for g in gaps if STALL_MS < g <= PAUSE_MS]
+    active = [g for g in gaps if g <= PAUSE_MS]
 
-    p = percentiles(gaps)
+    p = percentiles(active)
     span_s = (times[-1] - times[0]) / 1000 if len(times) > 1 else 0
     rate = len(times) / span_s if span_s > 0 else 0.0
 
@@ -295,9 +299,15 @@ def summarize(device: str, frames: list[Frame], longest_idle_gap: int | None) ->
     lines.append(
         f"  интервал: медиана {p[50]:.0f} мс, p95 {p[95]:.0f} мс, p99 {p[99]:.0f} мс"
     )
-    lines.append(f"  провалов > {STALL_MS} мс: {len(stalls)} из {len(gaps)}")
-    if stalls:
-        lines.append(f"  самый длинный провал: {max(stalls)} мс")
+    lines.append(
+        f"  провалов {STALL_MS}–{PAUSE_MS} мс: {len(stalls)} из {len(active)} активных интервалов"
+        + (f", самый длинный {max(stalls)} мс" if stalls else "")
+    )
+    if pauses:
+        lines.append(
+            f"  пауз > {PAUSE_MS} мс: {len(pauses)} (рука остановилась; для пробуждения из сна "
+            "нужен тест с ПОСТОЯННЫМ движением — см. ниже)"
+        )
 
     verdict = []
     if p[50] > TARGET_MEDIAN_MS:
@@ -306,11 +316,8 @@ def summarize(device: str, frames: list[Frame], longest_idle_gap: int | None) ->
         verdict.append(f"p95 {p[95]:.0f} мс выше нормы {TARGET_P95_MS:.0f} мс — сетка отчётов рвётся")
     if len(stalls) > max(3, len(gaps) // 20):
         verdict.append("провалы чаще 5 % — канал забит или устройство уходит в сон")
-    if longest_idle_gap is not None and longest_idle_gap > TARGET_WAKE_MS:
-        verdict.append(
-            f"первое движение после простоя пришло через {longest_idle_gap} мс "
-            f"(норма ≤ {TARGET_WAKE_MS:.0f}) — это пробуждение из sniff-режима"
-        )
+    # Пауза между движениями ничего не говорит о пробуждении: палец мог просто стоять.
+    # Пробуждение видно только в непрерывном движении (методика в конце вывода).
     if verdict:
         lines.extend(f"  ! {v}" for v in verdict)
     else:
@@ -390,7 +397,9 @@ def run(seconds: float, only: str | None, csv_path: str | None) -> int:
                 fh.write(f'{f.t_ms},"{f.device}",{f.kind},{f.dx},{f.dy},{f.flags}\n')
         print(f"\nСырые события: {csv_path}")
 
-    print("\nНормативы: медиана ≤ 12 мс, p95 ≤ 35 мс, провал после простоя ≤ 60 мс.")
+    print("\nНормативы: медиана ≤ 12 мс, p95 ≤ 35 мс, провалов 50–1000 мс ≤ 5 %.")
+    print("Пробуждение из sniff: веди палец ПОСТОЯННО по кругу 20 с без остановок —")
+    print("тогда каждый интервал > 50 мс принадлежит каналу, а не руке.")
     print("Частота выше ~125 Гц недостижима: столько отчётов Windows забирает у HID-канала.")
     return 0
 
