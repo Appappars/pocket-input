@@ -61,6 +61,8 @@ fun DiagnosticsScreen(
                 Text(stringResource(R.string.link_recent_reports, snapshot.sampleCount, snapshot.recentFailures))
                 Text(stringResource(R.string.link_queue_delay, snapshot.queueP95Ms))
                 Text(stringResource(R.string.link_session_reports, snapshot.sentOk, snapshot.sendFailed))
+                Text(stringResource(R.string.link_report_rate, snapshot.reportRatePerSec))
+                Text(stringResource(R.string.link_report_interval, snapshot.reportIntervalP50Ms))
             } else {
                 Text(stringResource(R.string.link_no_reports))
             }

@@ -115,4 +115,6 @@
     <string name="link_history">Connection history</string>
     <string name="link_no_events">Connection events will appear here.</string>
     <string name="link_history_event">%1$s · %2$s</string>
+    <string name="link_report_rate">Reports per second: %1$d</string>
+    <string name="link_report_interval">Interval between reports (median): %1$.1f ms</string>
 </resources>

@@ -12,8 +12,8 @@ android {
         applicationId = "dev.pocketinput"
         minSdk = 28
         targetSdk = 34
-        versionCode = 17
-        versionName = "0.3.9-keyboard-fix"
+        versionCode = 18
+        versionName = "0.4.0-panel-rate"
     }
 
     buildTypes {

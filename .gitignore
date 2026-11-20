@@ -3,3 +3,4 @@ egm/
 __pycache__/
 # тестовая сборка: APK не храним в git, отдаём файлом
 dist/
+outputs/

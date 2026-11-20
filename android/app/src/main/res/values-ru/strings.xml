@@ -115,4 +115,6 @@
     <string name="link_history">История связи</string>
     <string name="link_no_events">Здесь появятся события подключения.</string>
     <string name="link_history_event">%1$s · %2$s</string>
+    <string name="link_report_rate">Отчётов в секунду: %1$d</string>
+    <string name="link_report_interval">Интервал между отчётами (медиана): %1$.1f мс</string>
 </resources>

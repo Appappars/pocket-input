@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +46,7 @@ private const val MOD_LGUI = 0x08
 private const val KEY_D = 0x07
 private const val KEY_TAB = 0x2B
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TrackpadSurface(
     transport: HidTransport,
@@ -194,16 +196,53 @@ fun TrackpadSurface(
                                 continue
                             }
 
-                            recognizer.onFrame(
-                                event.changes.first().uptimeMillis,
-                                event.changes.map {
-                                    TrackpadContact(
-                                        it.id.value,
-                                        TrackpadPoint(it.position.x / density, it.position.y / density),
-                                        it.pressed,
+                            val pressedPointers = event.changes.count { it.pressed }
+                            if (pressedPointers <= 1) {
+                                // Один палец: отдаём жесту всю историю пакета, а не только текущую точку.
+                                // Так курсор обновляется с частотой сенсорной панели, а не с частотой кадров.
+                                val samples = ArrayList<PointerSample>(event.changes.size * 4)
+                                for (change in event.changes) {
+                                    // Исторические сэмплы панели несут только позицию и время;
+                                    // палец и состояние нажатия берём у текущего изменения.
+                                    val wasPressed = change.pressed || change.previousPressed
+                                    for (historical in change.historical) {
+                                        samples.add(
+                                            PointerSample(
+                                                change.id.value,
+                                                historical.position.x / density,
+                                                historical.position.y / density,
+                                                wasPressed,
+                                                historical.uptimeMillis,
+                                            ),
+                                        )
+                                    }
+                                    samples.add(
+                                        PointerSample(
+                                            change.id.value,
+                                            change.position.x / density,
+                                            change.position.y / density,
+                                            change.pressed,
+                                            change.uptimeMillis,
+                                        ),
                                     )
-                                },
-                            )
+                                }
+                                for (frame in buildPointerFrames(samples)) {
+                                    recognizer.onFrame(frame.timeMs, frame.contacts)
+                                }
+                            } else {
+                                // Несколько пальцев: прежнее поведение целиком — многопальцевые жесты
+                                // (скролл, зум, свайп) не меняем.
+                                recognizer.onFrame(
+                                    event.changes.first().uptimeMillis,
+                                    event.changes.map {
+                                        TrackpadContact(
+                                            it.id.value,
+                                            TrackpadPoint(it.position.x / density, it.position.y / density),
+                                            it.pressed,
+                                        )
+                                    },
+                                )
+                            }
                             event.changes.forEach { it.consume() }
                             needsDown = !pressed
                         }

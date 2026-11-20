@@ -2,6 +2,7 @@ package dev.pocketinput.hid
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LinkMeasurementsTest {
@@ -28,6 +29,28 @@ class LinkMeasurementsTest {
         assertEquals(0, snapshot.recentFailures)
         assertEquals(1L, snapshot.sendFailed)
         assertEquals(61f, snapshot.queueP95Ms, 0f)
+    }
+
+    @Test
+    fun reportRateCountsOnlySentReportsOfTheLastSecond() {
+        val measurements = LinkMeasurements()
+        repeat(3) { measurements.record(0f, false) }
+        repeat(5) { measurements.record(0f, true) }
+
+        val snapshot = measurements.update(LinkSnapshot())
+        assertEquals(5, snapshot.reportRatePerSec)
+    }
+
+    @Test
+    fun medianIntervalFollowsTheRealCadence() {
+        val measurements = LinkMeasurements()
+        repeat(4) {
+            measurements.record(0f, true)
+            Thread.sleep(10)
+        }
+
+        val snapshot = measurements.update(LinkSnapshot())
+        assertTrue(snapshot.reportIntervalP50Ms >= 8f)
     }
 
     @Test
